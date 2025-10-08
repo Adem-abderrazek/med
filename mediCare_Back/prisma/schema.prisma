@@ -1,0 +1,355 @@
+// schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+//
+// ENUMS
+//
+enum UserType {
+  tuteur
+  medecin
+  patient
+}
+
+enum RelationshipType {
+  tuteur
+  medecin
+}
+
+enum InvitationStatus {
+  pending
+  accepted
+  expired
+}
+
+enum ReminderStatus {
+  scheduled
+  sent
+  confirmed
+  missed
+  manual_confirm
+}
+
+enum ConfirmationType {
+  patient
+  tuteur_manual
+}
+
+enum AlertType {
+  missed_medication
+  no_response
+}
+
+enum AlertStatus {
+  pending
+  sent
+  acknowledged
+}
+
+// New: schedule granularity
+enum ScheduleType {
+  daily
+  weekly
+  interval
+  monthly
+  custom
+}
+
+//
+// MODELS
+//
+model User {
+  id            String            @id @default(uuid())
+  email         String            @unique
+  passwordHash  String
+  firstName     String
+  lastName      String
+  phoneNumber   String
+  userType      UserType
+  isActive      Boolean           @default(true)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  lastLogin     DateTime?
+
+  // Push notification fields
+  expoPushToken String?
+  notificationsEnabled Boolean @default(true)
+
+  // Relations
+  relationshipsAsCaregiver UserRelationship[] @relation("CaregiverRelationships")
+  relationshipsAsPatient   UserRelationship[] @relation("PatientRelationships")
+  invitations              Invitation[]       @relation("SenderInvitations")
+  prescriptionsAsPatient   Prescription[]     @relation("PatientPrescriptions")
+  prescriptionsAsDoctor    Prescription[]     @relation("DoctorPrescriptions")
+  voiceMessagesCreated     VoiceMessage[]     @relation("CreatedVoiceMessages")
+  voiceMessagesReceived    VoiceMessage[]     @relation("PatientVoiceMessages")
+  reminders                MedicationReminder[] @relation("PatientReminders")
+  confirmations            MedicationConfirmation[] @relation("UserConfirmations")
+  alertsAsPatient          Alert[]            @relation("PatientAlerts")
+  alertsAsTuteur           Alert[]            @relation("TuteurAlerts")
+  sessions                 UserSession?
+  settings                 UserSetting?
+
+  @@map("users")
+  MedicationReminder MedicationReminder[] @relation("ReminderConfirmer")
+}
+
+model UserRelationship {
+  id              String           @id @default(uuid())
+  caregiverId     String
+  patientId       String
+  relationshipType RelationshipType
+  isActive        Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  caregiver User @relation("CaregiverRelationships", fields: [caregiverId], references: [id], onDelete: Cascade)
+  patient   User @relation("PatientRelationships", fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@unique([patientId, relationshipType], map: "unique_active_relationship")
+  @@map("user_relationships")
+}
+
+model Invitation {
+  id                String           @id @default(uuid())
+  senderId          String
+  patientPhoneNumber String
+  patientFirstName  String
+  patientLastName   String
+  invitationToken   String           @unique
+  status            InvitationStatus @default(pending)
+  senderType        RelationshipType
+  expiresAt         DateTime
+  createdAt         DateTime         @default(now())
+  acceptedAt        DateTime?
+
+  sender User @relation("SenderInvitations", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@map("invitations")
+}
+
+model Medication {
+  id          String      @id @default(uuid())
+  name        String
+  genericName String?
+  dosage      String?
+  form        String?
+  description String?
+  imageUrl    String?
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  prescriptions Prescription[]
+
+  @@map("medications")
+}
+
+model Prescription {
+  id            String      @id @default(uuid())
+  patientId     String
+  medicationId  String
+  prescribedBy  String
+  customDosage  String?
+  instructions  String?
+  startDate     DateTime
+  endDate       DateTime?
+  isChronic     Boolean     @default(false)
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  patient     User       @relation("PatientPrescriptions", fields: [patientId], references: [id], onDelete: Cascade)
+  medication  Medication @relation(fields: [medicationId], references: [id], onDelete: Restrict)
+  doctor      User       @relation("DoctorPrescriptions", fields: [prescribedBy], references: [id], onDelete: Cascade)
+  schedules   MedicationSchedule[]
+  reminders   MedicationReminder[]
+
+  @@map("prescriptions")
+}
+
+model MedicationSchedule {
+  id             String      @id @default(uuid())
+  prescriptionId String
+  scheduledTime  DateTime
+  // 1=Mon .. 7=Sun
+  daysOfWeek     Int[]
+  scheduleType   ScheduleType @default(daily)
+  intervalHours  Int?
+  lastGeneratedAt DateTime?
+  isActive       Boolean     @default(true)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  prescription Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  exceptions   MedicationScheduleException[]
+
+  @@map("medication_schedules")
+}
+
+// Optional: skip a specific date for a schedule
+model MedicationScheduleException {
+  id         String   @id @default(uuid())
+  scheduleId String
+  date       DateTime
+  reason     String?
+
+  schedule MedicationSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  @@map("medication_schedule_exceptions")
+}
+
+model VoiceMessage {
+  id             String   @id @default(uuid())
+  creatorId      String
+  patientId      String
+  fileUrl        String
+  fileName       String
+  durationSeconds Int
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  creator User @relation("CreatedVoiceMessages", fields: [creatorId], references: [id], onDelete: Cascade)
+  patient User @relation("PatientVoiceMessages", fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@map("voice_messages")
+  MedicationReminder MedicationReminder[]
+}
+
+model StandardVoiceMessage {
+  id             String   @id @default(uuid())
+  messageKey     String   @unique
+  fileUrl        String
+  description    String
+  language       String   @default("fr")
+  durationSeconds Int
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  reminders MedicationReminder[]
+
+  @@map("standard_voice_messages")
+}
+
+model MedicationReminder {
+  id                     String        @id @default(uuid())
+  prescriptionId         String
+  patientId              String
+  voiceMessageId         String?
+  standardVoiceMessageId String?
+  scheduledFor           DateTime
+  sentAt                 DateTime?
+  status                 ReminderStatus @default(scheduled)
+  createdAt              DateTime       @default(now())
+  confirmedAt            DateTime?
+  confirmedBy            String?
+  // Delivery/UX enhancements
+  windowStartMinutes     Int?
+  windowEndMinutes       Int?
+  snoozedUntil           DateTime?
+
+  // Push notification fields
+  pushNotificationSent   Boolean @default(false)
+  pushNotificationId     String?
+  tutorAlertSent         Boolean @default(false)
+  tutorAlertAt           DateTime?
+
+  prescription Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  patient      User         @relation("PatientReminders", fields: [patientId], references: [id], onDelete: Cascade)
+  voiceMessage VoiceMessage? @relation(fields: [voiceMessageId], references: [id], onDelete: SetNull)
+  standardVoiceMessage StandardVoiceMessage? @relation(fields: [standardVoiceMessageId], references: [id], onDelete: SetNull)
+  confirmer User? @relation("ReminderConfirmer", fields: [confirmedBy], references: [id], onDelete: SetNull)
+  confirmations MedicationConfirmation[]
+  alerts        Alert[]
+  deliveryLogs  ReminderDeliveryLog[]
+
+  @@map("medication_reminders")
+}
+
+// Delivery audit logs per reminder
+model ReminderDeliveryLog {
+  id         String   @id @default(uuid())
+  reminderId String
+  channel    String   // sms | voice | push
+  provider   String?
+  providerId String?
+  status     String   // queued | sent | failed | delivered
+  error      String?
+  createdAt  DateTime @default(now())
+
+  reminder MedicationReminder @relation(fields: [reminderId], references: [id], onDelete: Cascade)
+
+  @@map("reminder_delivery_logs")
+}
+
+model MedicationConfirmation {
+  id               String           @id @default(uuid())
+  reminderId       String
+  confirmedBy      String
+  confirmationType ConfirmationType
+  notes            String?
+  confirmedAt      DateTime         @default(now())
+
+  reminder   MedicationReminder @relation(fields: [reminderId], references: [id], onDelete: Cascade)
+  confirmer  User               @relation("UserConfirmations", fields: [confirmedBy], references: [id], onDelete: Cascade)
+
+  @@unique([reminderId])
+  @@map("medication_confirmations")
+}
+
+model Alert {
+  id        String     @id @default(uuid())
+  patientId String
+  tuteurId  String
+  reminderId String?
+  alertType AlertType
+  title     String
+  message   String
+  isRead    Boolean    @default(false)
+  status    AlertStatus @default(pending)
+  createdAt DateTime   @default(now())
+  readAt    DateTime?
+
+  patient  User @relation("PatientAlerts", fields: [patientId], references: [id], onDelete: Cascade)
+  tuteur   User @relation("TuteurAlerts", fields: [tuteurId], references: [id], onDelete: Cascade)
+  reminder MedicationReminder? @relation(fields: [reminderId], references: [id], onDelete: SetNull)
+
+  @@map("alerts")
+}
+
+model UserSession {
+  id           String   @id @default(uuid())
+  userId       String   @unique
+  sessionToken String   @unique
+  deviceInfo   String?
+  fcmToken     String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  lastActivity DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_sessions")
+}
+
+model UserSetting {
+  id                     String   @id @default(uuid())
+  userId                 String   @unique
+  notificationPreferences Json?
+  appSettings            Json?
+  timezone               String?  @default("Africa/Tunis")
+  language               String?  @default("fr")
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_settings")
+}
