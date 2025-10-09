@@ -5,8 +5,8 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
-    "start": "node dist/index.js",
+    "build": "tsc && npx prisma generate",
+    "start": "npx prisma migrate deploy && node dist/index.js",
     "test": "jest",
     "test:watch": "jest --watch"
   },
