@@ -105,7 +105,15 @@ export class PushNotificationService {
                 body: JSON.stringify(payload),
             });
             const result = await response.json();
-            if (response.ok && result.data && result.data[0]?.status === 'ok') {
+            // Handle both array and object responses from Expo
+            const isSuccess = response.ok && (
+            // Array format: { data: [{ status: 'ok', id: '...' }] }
+            (result.data && Array.isArray(result.data) && result.data[0]?.status === 'ok') ||
+                // Object format: { data: { status: 'ok', id: '...' } }
+                (result.data && !Array.isArray(result.data) && result.data.status === 'ok') ||
+                // Direct format: { status: 'ok', id: '...' }
+                (result.status === 'ok'));
+            if (isSuccess) {
                 console.log('✅ Expo push notification sent successfully');
                 return true;
             }

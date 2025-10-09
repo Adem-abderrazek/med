@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { pushNotificationService } from './pushNotification.service.js';
+import { smsService } from './sms.service.js';
 const prisma = new PrismaClient();
 export class NotificationSchedulerService {
     isRunning = false;
@@ -178,16 +179,29 @@ export class NotificationSchedulerService {
     async sendGroupedMedicationReminder(reminderGroup) {
         try {
             const firstReminder = reminderGroup[0];
-            const patient = firstReminder.patient;
-            if (!patient.expoPushToken || !patient.notificationsEnabled) {
-                console.log(`❌ Patient ${patient.firstName} has no push token or notifications disabled`);
+            // Get patient with phone number
+            const patient = await prisma.user.findUnique({
+                where: { id: firstReminder.patientId },
+                select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    phoneNumber: true,
+                    expoPushToken: true,
+                    notificationsEnabled: true,
+                },
+            });
+            if (!patient) {
+                console.log(`❌ Patient not found`);
                 return;
             }
             let medications;
             let reminderData;
+            const reminderIds = [];
             if (reminderGroup.length === 1) {
                 // Single medication
                 const reminder = reminderGroup[0];
+                reminderIds.push(reminder.id);
                 reminderData = {
                     reminderId: reminder.id,
                     medicationName: reminder.prescription.medication.name,
@@ -200,13 +214,16 @@ export class NotificationSchedulerService {
             }
             else {
                 // Multiple medications
-                medications = reminderGroup.map(reminder => ({
-                    id: reminder.id,
-                    name: reminder.prescription.medication.name,
-                    dosage: reminder.prescription.customDosage || reminder.prescription.medication.dosage || 'Dosage non spécifié',
-                    instructions: reminder.prescription.instructions || reminder.prescription.medication.description,
-                    imageUrl: reminder.prescription.medication.imageUrl,
-                }));
+                medications = reminderGroup.map(reminder => {
+                    reminderIds.push(reminder.id);
+                    return {
+                        id: reminder.id,
+                        name: reminder.prescription.medication.name,
+                        dosage: reminder.prescription.customDosage || reminder.prescription.medication.dosage || 'Dosage non spécifié',
+                        instructions: reminder.prescription.instructions || reminder.prescription.medication.description,
+                        imageUrl: reminder.prescription.medication.imageUrl,
+                    };
+                });
                 reminderData = {
                     reminderId: reminderGroup.map(r => r.id).join(','), // Multiple IDs
                     medicationName: `${medications.length} médicaments`,
@@ -216,16 +233,99 @@ export class NotificationSchedulerService {
                     medications,
                 };
             }
-            const success = await pushNotificationService.sendMedicationReminder(patient.id, reminderData);
-            if (success) {
-                console.log(`✅ Sent medication reminder to ${patient.firstName} ${patient.lastName}`);
+            // 📱 SEND PUSH NOTIFICATION
+            let pushSuccess = false;
+            if (patient.expoPushToken && patient.notificationsEnabled) {
+                pushSuccess = await pushNotificationService.sendMedicationReminder(patient.id, reminderData);
+                // Log push notification delivery
+                for (const reminderId of reminderIds) {
+                    await prisma.reminderDeliveryLog.create({
+                        data: {
+                            reminderId,
+                            channel: 'push',
+                            provider: 'expo',
+                            status: pushSuccess ? 'sent' : 'failed',
+                            error: pushSuccess ? null : 'Push notification failed',
+                        },
+                    });
+                }
+                if (pushSuccess) {
+                    console.log(`✅ Push notification sent to ${patient.firstName} ${patient.lastName}`);
+                }
+                else {
+                    console.log(`❌ Push notification failed for ${patient.firstName} ${patient.lastName}`);
+                }
             }
             else {
-                console.log(`❌ Failed to send medication reminder to ${patient.firstName} ${patient.lastName}`);
+                console.log(`⚠️ Patient ${patient.firstName} has no push token or notifications disabled`);
+            }
+            // 📨 SEND SMS MESSAGE
+            if (patient.phoneNumber) {
+                const smsMessage = this.formatMedicationSMS(reminderGroup, patient.firstName);
+                console.log(`📨 Sending SMS to ${patient.phoneNumber}`);
+                const smsResult = await smsService.sendSMS(patient.phoneNumber, smsMessage);
+                // Log SMS delivery
+                for (const reminderId of reminderIds) {
+                    await prisma.reminderDeliveryLog.create({
+                        data: {
+                            reminderId,
+                            channel: 'sms',
+                            provider: 'educanet',
+                            providerId: smsResult.messageId,
+                            status: smsResult.success ? 'sent' : 'failed',
+                            error: smsResult.success ? null : smsResult.error,
+                        },
+                    });
+                }
+                if (smsResult.success) {
+                    console.log(`✅ SMS sent to ${patient.firstName} ${patient.lastName}`);
+                }
+                else {
+                    console.log(`❌ SMS failed for ${patient.firstName} ${patient.lastName}: ${smsResult.error}`);
+                }
+            }
+            else {
+                console.log(`⚠️ Patient ${patient.firstName} has no phone number`);
+            }
+            // Mark as sent if at least one channel succeeded
+            if (pushSuccess || (patient.phoneNumber && reminderIds.length > 0)) {
+                console.log(`✅ Medication reminder delivered to ${patient.firstName} ${patient.lastName}`);
             }
         }
         catch (error) {
             console.error('❌ Error sending grouped medication reminder:', error);
+        }
+    }
+    /**
+     * Format SMS message for medication reminders
+     */
+    formatMedicationSMS(reminderGroup, patientFirstName) {
+        if (reminderGroup.length === 1) {
+            // Single medication
+            const reminder = reminderGroup[0];
+            const medName = reminder.prescription.medication.name;
+            const dosage = reminder.prescription.customDosage || reminder.prescription.medication.dosage || '';
+            const instructions = reminder.prescription.instructions || '';
+            let message = `MediCare: Bonjour ${patientFirstName}, il est temps de prendre ${medName}`;
+            if (dosage) {
+                message += ` (${dosage})`;
+            }
+            if (instructions) {
+                message += `. ${instructions}`;
+            }
+            message += '.';
+            return message;
+        }
+        else {
+            // Multiple medications
+            let message = `MediCare: Bonjour ${patientFirstName}, il est temps de prendre vos medicaments: `;
+            const medList = reminderGroup.map(reminder => {
+                const medName = reminder.prescription.medication.name;
+                const dosage = reminder.prescription.customDosage || reminder.prescription.medication.dosage || '';
+                return dosage ? `${medName} (${dosage})` : medName;
+            });
+            message += medList.join(', ') + '.';
+            return message;
         }
     }
     /**
