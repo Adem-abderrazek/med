@@ -715,7 +715,10 @@ class TutorService {
         });
       }
 
-      // Create prescription
+      // Create prescription - set startDate to beginning of today
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      
       const prescription = await prisma.prescription.create({
         data: {
           patientId,
@@ -723,7 +726,7 @@ class TutorService {
           prescribedBy: tutorId,
           customDosage: customDosage || undefined,
           instructions: instructions || undefined,
-          startDate: new Date(),
+          startDate: startOfToday,
           endDate: endDate ? new Date(endDate as any) : null,
           isChronic: !!isChronic
         }
