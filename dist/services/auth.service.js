@@ -115,31 +115,55 @@ export class AuthService {
     async login(loginData, deviceInfo) {
         try {
             const { emailOrPhone, password, pushToken } = loginData;
+            // Trim and clean the input
+            const cleanInput = emailOrPhone.trim();
             // Determine if input is email or phone number
-            const isEmail = emailOrPhone.includes('@');
-            const isPhone = /^\+?[0-9\s\-\(\)]+$/.test(emailOrPhone.replace(/\s/g, ''));
+            const isEmail = cleanInput.includes('@');
+            const isPhone = /^\+?[0-9\s\-\(\)]+$/.test(cleanInput.replace(/\s/g, ''));
+            console.log('🔐 Login attempt:', {
+                input: cleanInput,
+                isEmail,
+                isPhone
+            });
             let user = null;
             if (isEmail) {
                 // Find user by email
+                const emailLower = cleanInput.toLowerCase();
+                console.log('📧 Searching for email:', emailLower);
                 user = await prisma.user.findUnique({
-                    where: { email: emailOrPhone.toLowerCase() }
+                    where: { email: emailLower }
                 });
+                console.log('📧 Email search result:', user ? `Found user ${user.id}` : 'Not found');
             }
             else if (isPhone) {
                 // Clean phone number (remove spaces, dashes, parentheses)
-                const cleanPhone = emailOrPhone.replace(/[\s\-\(\)]/g, '');
+                const cleanPhone = cleanInput.replace(/[\s\-\(\)]/g, '');
+                console.log('📱 Searching for phone:', cleanPhone);
+                // Build search array with different formats including Tunisia country code
+                const phoneFormats = [
+                    cleanPhone, // Original: 52536742
+                    `+${cleanPhone}`, // With +: +52536742
+                    cleanPhone.startsWith('+') ? cleanPhone.substring(1) : `+${cleanPhone}` // Toggle +
+                ];
+                // If phone doesn't start with country code, try Tunisia (+216)
+                if (!cleanPhone.startsWith('+') && !cleanPhone.startsWith('216')) {
+                    phoneFormats.push(`+216${cleanPhone}`); // +21652536742
+                    phoneFormats.push(`216${cleanPhone}`); // 21652536742
+                }
+                console.log('🔍 Trying phone formats:', phoneFormats);
                 // Find user by phone number (try different formats)
                 user = await prisma.user.findFirst({
                     where: {
-                        OR: [
-                            { phoneNumber: cleanPhone },
-                            { phoneNumber: `+${cleanPhone}` },
-                            { phoneNumber: cleanPhone.startsWith('+') ? cleanPhone.substring(1) : `+${cleanPhone}` }
-                        ]
+                        OR: phoneFormats.map(phone => ({ phoneNumber: phone }))
                     }
                 });
+                console.log('📱 Phone search result:', user ? `Found user ${user.id}` : 'Not found');
+            }
+            else {
+                console.warn('⚠️ Input is neither valid email nor phone:', cleanInput);
             }
             if (!user) {
+                console.log('❌ Login failed: User not found');
                 return {
                     success: false,
                     message: 'Identifiants invalides'
@@ -447,19 +471,28 @@ export class AuthService {
         }
         console.log('✅ Code verified, proceeding with password reset...');
         try {
-            // Find user by phone number
+            // Find user by phone number - handle multiple formats including Tunisia country code
             const cleanPhone = phoneNumber.replace(/[\s\-\(\)]/g, '');
+            console.log('🔍 Searching for phone number:', cleanPhone);
+            // Build search array with different formats
+            const phoneFormats = [
+                cleanPhone, // Original: 52536742
+                `+${cleanPhone}`, // With +: +52536742
+                cleanPhone.startsWith('+') ? cleanPhone.substring(1) : `+${cleanPhone}` // Toggle +
+            ];
+            // If phone doesn't start with country code, try Tunisia (+216)
+            if (!cleanPhone.startsWith('+') && !cleanPhone.startsWith('216')) {
+                phoneFormats.push(`+216${cleanPhone}`); // +21652536742
+                phoneFormats.push(`216${cleanPhone}`); // 21652536742
+            }
+            console.log('🔍 Trying phone formats:', phoneFormats);
             const user = await prisma.user.findFirst({
                 where: {
-                    OR: [
-                        { phoneNumber: cleanPhone },
-                        { phoneNumber: `+${cleanPhone}` },
-                        { phoneNumber: cleanPhone.startsWith('+') ? cleanPhone.substring(1) : `+${cleanPhone}` }
-                    ]
+                    OR: phoneFormats.map(phone => ({ phoneNumber: phone }))
                 }
             });
             if (!user) {
-                console.log('❌ User not found');
+                console.log('❌ User not found with any phone format');
                 return {
                     success: false,
                     message: "Utilisateur non trouvé"

@@ -185,7 +185,7 @@ export class PushNotificationService {
         }
     }
     /**
-     * Send alert to tutors when patient doesn't respond
+     * Send alert to tutors AND doctors when patient doesn't respond
      */
     async sendTutorAlert(patientId, reminderData) {
         try {
@@ -198,14 +198,16 @@ export class PushNotificationService {
                 },
             });
             if (!patient) {
-                console.log('❌ Patient not found for tutor alert');
+                console.log('❌ Patient not found for caregiver alert');
                 return false;
             }
-            // Get tutors for this patient
-            const tutorRelationships = await prisma.userRelationship.findMany({
+            // Get BOTH tutors AND doctors for this patient
+            const caregiverRelationships = await prisma.userRelationship.findMany({
                 where: {
                     patientId,
-                    relationshipType: 'tuteur',
+                    relationshipType: {
+                        in: ['tuteur', 'medecin'] // ✅ Include both tutors and doctors
+                    },
                     isActive: true,
                 },
                 include: {
@@ -214,46 +216,56 @@ export class PushNotificationService {
                             id: true,
                             firstName: true,
                             lastName: true,
+                            userType: true,
                             expoPushToken: true,
                             notificationsEnabled: true,
                         },
                     },
                 },
             });
-            if (tutorRelationships.length === 0) {
-                console.log('❌ No tutors found for patient');
+            if (caregiverRelationships.length === 0) {
+                console.log('❌ No tutors or doctors found for patient');
                 return false;
             }
+            const { medications, medicationName } = reminderData;
+            let medicationText;
+            if (medications && medications.length > 1) {
+                medicationText = `${medications.length} médicaments`;
+            }
+            else {
+                medicationText = medicationName;
+            }
+            console.log(`📢 Found ${caregiverRelationships.length} caregivers (tutors + doctors) to alert`);
             let alertsSent = 0;
-            for (const relationship of tutorRelationships) {
-                const tutor = relationship.caregiver;
-                if (!tutor.expoPushToken || !tutor.notificationsEnabled) {
-                    console.log(`❌ Tutor ${tutor.firstName} has no push token or notifications disabled`);
+            const alertedCaregivers = [];
+            for (const relationship of caregiverRelationships) {
+                const caregiver = relationship.caregiver;
+                const caregiverType = caregiver.userType === 'medecin' ? 'Docteur' : 'Tuteur';
+                if (!caregiver.expoPushToken || !caregiver.notificationsEnabled) {
+                    console.log(`❌ ${caregiverType} ${caregiver.firstName} has no push token or notifications disabled`);
                     continue;
                 }
-                const { medications, medicationName } = reminderData;
-                let medicationText;
-                if (medications && medications.length > 1) {
-                    medicationText = `${medications.length} médicaments`;
-                }
-                else {
-                    medicationText = medicationName;
-                }
                 const alertData = {
-                    type: 'tutor_alert',
+                    type: 'missed_medication_alert',
                     patientId,
                     patientName: `${patient.firstName} ${patient.lastName}`,
                     medicationName: medicationText,
                     reminderTime: reminderData.reminderTime,
                     reminderId: reminderData.reminderId,
+                    caregiverType: caregiver.userType,
                 };
-                const success = await this.sendPushNotification(tutor.expoPushToken, '⚠️ Médicament non pris', `${patient.firstName} ${patient.lastName} n'a pas confirmé la prise de ${medicationText}`, alertData);
+                const success = await this.sendPushNotification(caregiver.expoPushToken, '⚠️ Médicament non pris', `${patient.firstName} ${patient.lastName} n'a pas confirmé la prise de ${medicationText}`, alertData);
                 if (success) {
                     alertsSent++;
+                    alertedCaregivers.push(`${caregiverType} ${caregiver.firstName}`);
+                    console.log(`✅ Alert sent to ${caregiverType} ${caregiver.firstName} ${caregiver.lastName}`);
+                }
+                else {
+                    console.log(`❌ Failed to send alert to ${caregiverType} ${caregiver.firstName} ${caregiver.lastName}`);
                 }
             }
             if (alertsSent > 0) {
-                // Update reminder with tutor alert info
+                // Update reminder with alert info
                 await prisma.medicationReminder.update({
                     where: { id: reminderData.reminderId },
                     data: {
@@ -261,26 +273,26 @@ export class PushNotificationService {
                         tutorAlertAt: new Date(),
                     },
                 });
-                // Create alert records for tutors
-                for (const relationship of tutorRelationships) {
+                // Create alert records for ALL caregivers (tutors + doctors)
+                for (const relationship of caregiverRelationships) {
                     await prisma.alert.create({
                         data: {
                             patientId,
-                            tuteurId: relationship.caregiverId,
+                            tuteurId: relationship.caregiverId, // Note: field name is tuteurId but stores any caregiver
                             alertType: 'missed_medication',
                             title: 'Médicament non pris',
-                            message: `${patient.firstName} ${patient.lastName} n'a pas confirmé la prise de médicament`,
+                            message: `${patient.firstName} ${patient.lastName} n'a pas confirmé la prise de ${medicationText}`,
                             isRead: false,
                             reminderId: reminderData.reminderId,
                         },
                     });
                 }
             }
-            console.log(`✅ Sent ${alertsSent} tutor alerts`);
+            console.log(`✅ Successfully sent ${alertsSent} alerts to: ${alertedCaregivers.join(', ')}`);
             return alertsSent > 0;
         }
         catch (error) {
-            console.error('❌ Error sending tutor alert:', error);
+            console.error('❌ Error sending caregiver alerts:', error);
             return false;
         }
     }

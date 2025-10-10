@@ -214,17 +214,28 @@ class TutorService {
             console.log('───────────────────────────────────────────────────');
             console.log('📤 STEP 2: CHECKING FOR EXISTING PATIENT');
             console.log('───────────────────────────────────────────────────');
-            // Check if a patient already exists with the same phone number
+            // Normalize phone number for searching (try multiple formats)
+            const cleanPhone = patientData.phoneNumber.replace(/[\s\-\(\)]/g, '');
+            console.log('🔍 Searching for patient with phone:', cleanPhone);
+            // Check if a patient already exists with the same phone number (try different formats)
             const existingPatient = await prisma.user.findFirst({
                 where: {
-                    phoneNumber: patientData.phoneNumber,
-                    userType: 'patient'
+                    userType: 'patient',
+                    OR: [
+                        { phoneNumber: cleanPhone },
+                        { phoneNumber: `+${cleanPhone}` },
+                        { phoneNumber: cleanPhone.startsWith('+') ? cleanPhone.substring(1) : `+${cleanPhone}` },
+                        // Also try with Tunisia code if not present
+                        { phoneNumber: cleanPhone.startsWith('216') ? `+${cleanPhone}` : `+216${cleanPhone}` },
+                        { phoneNumber: cleanPhone.startsWith('0') ? `+216${cleanPhone.substring(1)}` : cleanPhone }
+                    ]
                 }
             });
             console.log('🔍 Existing patient found:', !!existingPatient);
             if (existingPatient) {
                 console.log('👤 Existing patient ID:', existingPatient.id);
                 console.log('📧 Existing patient email:', existingPatient.email);
+                console.log('📱 Existing patient phone:', existingPatient.phoneNumber);
             }
             // Prepare variables for SMS content
             let patient = existingPatient || null;
@@ -616,7 +627,9 @@ class TutorService {
                     }
                 });
             }
-            // Create prescription
+            // Create prescription - set startDate to beginning of today
+            const startOfToday = new Date();
+            startOfToday.setHours(0, 0, 0, 0);
             const prescription = await prisma.prescription.create({
                 data: {
                     patientId,
@@ -624,7 +637,7 @@ class TutorService {
                     prescribedBy: tutorId,
                     customDosage: customDosage || undefined,
                     instructions: instructions || undefined,
-                    startDate: new Date(),
+                    startDate: startOfToday,
                     endDate: endDate ? new Date(endDate) : null,
                     isChronic: !!isChronic
                 }
@@ -738,6 +751,11 @@ class TutorService {
                 // Create new schedules
                 const now = new Date();
                 for (const s of payload.schedules) {
+                    // Validate that time exists
+                    if (!s.time) {
+                        console.warn('⚠️ Schedule missing time property, skipping:', s);
+                        continue;
+                    }
                     const [hhStr, mmStr] = s.time.split(':');
                     const scheduled = new Date(now);
                     const hh = parseInt(hhStr || '8', 10);
@@ -747,7 +765,7 @@ class TutorService {
                         data: {
                             prescriptionId,
                             scheduledTime: scheduled,
-                            daysOfWeek: s.days,
+                            daysOfWeek: s.days || [],
                             scheduleType: payload.scheduleType || 'daily',
                             intervalHours: payload.intervalHours ?? null,
                         }
