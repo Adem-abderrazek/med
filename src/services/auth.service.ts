@@ -411,9 +411,9 @@ export class AuthService {
       console.log('═══════════════════════════════════════════════════');
       console.log('📱 Phone number:', phoneNumber);
       
-      // Generate a 4-digit verification code
+      // Generate a 4-digit verification code (1000-9999)
       const verificationCode = Math.floor(1000 + Math.random() * 9000).toString();
-      console.log('🔢 Generated code:', verificationCode);
+      console.log('🔢 Generated 4-digit code:', verificationCode);
       
       // Store the verification code with timestamp
       verificationCodes.set(phoneNumber, {
