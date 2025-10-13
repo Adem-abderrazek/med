@@ -884,12 +884,20 @@ export class PatientService {
         let voiceTitle = null;
         let voiceDuration = 0;
 
+        // Debug logging
+        console.log(`🔍 Processing reminder: ${reminder.prescription.medication.name}`);
+        console.log(`   Prescription voiceMessageId: ${(reminder.prescription as any).voiceMessageId || 'null'}`);
+        console.log(`   Prescription.voiceMessage exists: ${!!reminder.prescription.voiceMessage}`);
+        console.log(`   Reminder.voiceMessage exists: ${!!reminder.voiceMessage}`);
+        console.log(`   Reminder.standardVoiceMessage exists: ${!!reminder.standardVoiceMessage}`);
+
         // Priority 1: Check prescription's voice message
         if (reminder.prescription.voiceMessage && reminder.prescription.voiceMessage.isActive) {
           voiceUrl = reminder.prescription.voiceMessage.fileUrl;
           voiceFileName = reminder.prescription.voiceMessage.fileName;
           voiceTitle = reminder.prescription.voiceMessage.title;
           voiceDuration = reminder.prescription.voiceMessage.durationSeconds;
+          console.log(`   ✅ Using prescription voice: ${voiceUrl}`);
         }
         // Priority 2: Check reminder's voice message
         else if (reminder.voiceMessage && reminder.voiceMessage.isActive) {
@@ -897,6 +905,7 @@ export class PatientService {
           voiceFileName = reminder.voiceMessage.fileName;
           voiceTitle = reminder.voiceMessage.title;
           voiceDuration = reminder.voiceMessage.durationSeconds;
+          console.log(`   ✅ Using reminder voice: ${voiceUrl}`);
         }
         // Priority 3: Check standard voice message
         else if (reminder.standardVoiceMessage && reminder.standardVoiceMessage.isActive) {
@@ -904,6 +913,9 @@ export class PatientService {
           voiceFileName = `standard_${reminder.standardVoiceMessage.messageKey}.m4a`;
           voiceTitle = reminder.standardVoiceMessage.description;
           voiceDuration = reminder.standardVoiceMessage.durationSeconds;
+          console.log(`   ✅ Using standard voice: ${voiceUrl}`);
+        } else {
+          console.log(`   ℹ️ No voice message found for this reminder`);
         }
 
         return {
