@@ -173,6 +173,30 @@ class TutorController {
         }
     }
     /**
+     * Get patient adherence history
+     */
+    async getPatientAdherenceHistory(req, res) {
+        try {
+            const tutorId = req.user.userId;
+            const { patientId } = req.params;
+            const daysBack = parseInt(req.query.days) || 30;
+            console.log('📊 Getting adherence history for patient:', patientId);
+            console.log('👨‍⚕️ Requested by tutor/doctor:', tutorId);
+            console.log('📅 Days back:', daysBack);
+            const data = await tutorService.getPatientAdherenceHistory(tutorId, patientId, daysBack);
+            return res.json({
+                success: true,
+                data,
+                message: 'Patient adherence history loaded successfully'
+            });
+        }
+        catch (error) {
+            console.error('Error in getPatientAdherenceHistory controller:', error);
+            const msg = error?.message || 'Failed to get patient adherence history';
+            return res.status(400).json({ success: false, message: msg });
+        }
+    }
+    /**
      * Create a prescription for a tutor's patient
      */
     async createPrescription(req, res) {
@@ -352,11 +376,11 @@ class TutorController {
     async createVoiceMessage(req, res) {
         try {
             const tutorId = req.user.userId;
-            const { patientId, fileUrl, fileName, durationSeconds } = req.body;
+            const { patientId, fileUrl, fileName, title, durationSeconds } = req.body;
             if (!patientId || !fileUrl) {
                 return res.status(400).json({ success: false, message: 'patientId and fileUrl are required' });
             }
-            const created = await tutorService.createVoiceMessage(tutorId, { patientId, fileUrl, fileName, durationSeconds });
+            const created = await tutorService.createVoiceMessage(tutorId, { patientId, fileUrl, fileName, title, durationSeconds });
             return res.status(201).json({ success: true, data: created });
         }
         catch (error) {
@@ -411,6 +435,24 @@ class TutorController {
             return res.status(500).json({
                 success: false,
                 message: error?.message || 'Failed to generate reminders'
+            });
+        }
+    }
+    /**
+     * Link existing reminders to voice messages (repair utility)
+     */
+    async linkRemindersToVoiceMessages(req, res) {
+        try {
+            await reminderGeneratorService.linkExistingRemindersToVoiceMessages();
+            return res.json({
+                success: true,
+                message: 'Reminders linked to voice messages successfully'
+            });
+        }
+        catch (error) {
+            return res.status(500).json({
+                success: false,
+                message: error?.message || 'Failed to link reminders to voice messages'
             });
         }
     }

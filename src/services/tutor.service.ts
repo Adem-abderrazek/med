@@ -651,9 +651,59 @@ class TutorService {
         where: { patientId, isActive: true },
         include: {
           medication: true,
-          schedules: true
+          schedules: true,
+          voiceMessage: true
         },
         orderBy: { createdAt: 'desc' }
+      });
+
+      // Transform prescriptions to include formatted schedules
+      const formattedPrescriptions = prescriptions.map(prescription => {
+        const schedules = prescription.schedules.map(schedule => {
+          // Extract HH:mm from scheduledTime
+          const time = new Date(schedule.scheduledTime).toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+          });
+
+          return {
+            time: time,
+            days: schedule.daysOfWeek
+          };
+        });
+
+        return {
+          id: prescription.id,
+          name: prescription.medication.name,
+          dosage: prescription.medication.dosage || prescription.customDosage,
+          customDosage: prescription.customDosage,
+          instructions: prescription.instructions,
+          startDate: prescription.startDate,
+          endDate: prescription.endDate,
+          isActive: prescription.isActive,
+          isChronic: prescription.isChronic,
+          voiceMessageId: prescription.voiceMessageId,
+          voiceMessage: prescription.voiceMessage ? {
+            id: prescription.voiceMessage.id,
+            fileUrl: prescription.voiceMessage.fileUrl,
+            fileName: prescription.voiceMessage.fileName,
+            title: prescription.voiceMessage.title,
+            durationSeconds: prescription.voiceMessage.durationSeconds,
+            isActive: prescription.voiceMessage.isActive
+          } : null,
+          medication: {
+            id: prescription.medication.id,
+            name: prescription.medication.name,
+            dosage: prescription.medication.dosage,
+            form: prescription.medication.form,
+            genericName: prescription.medication.genericName,
+            description: prescription.medication.description
+          },
+          schedules: schedules,
+          scheduleType: prescription.schedules[0]?.scheduleType || 'daily',
+          intervalHours: prescription.schedules[0]?.intervalHours
+        };
       });
 
       // Fetch today's reminders
@@ -669,10 +719,37 @@ class TutorService {
         orderBy: { scheduledFor: 'asc' }
       });
 
-      return { patient, prescriptions, reminders };
+      return { patient, prescriptions: formattedPrescriptions, reminders };
     } catch (error) {
       console.error('Error getting patient profile:', error);
       throw new Error('Failed to get patient profile');
+    }
+  }
+
+  /**
+   * Get patient adherence history (for doctors/tutors)
+   */
+  async getPatientAdherenceHistory(tutorId: string, patientId: string, daysBack: number = 30) {
+    try {
+      // Verify relationship - support both tuteur and medecin
+      const relation = await prisma.userRelationship.findFirst({
+        where: {
+          caregiverId: tutorId,
+          patientId,
+          relationshipType: { in: ['tuteur', 'medecin'] },
+          isActive: true
+        }
+      });
+      if (!relation) {
+        throw new Error('Unauthorized: caregiver is not linked to this patient');
+      }
+
+      // Use patient service to get adherence history
+      const { patientService } = await import('./patient.service.js');
+      return await patientService.getPatientAdherenceHistory(patientId, daysBack);
+    } catch (error) {
+      console.error('Error getting patient adherence history:', error);
+      throw new Error('Failed to get patient adherence history');
     }
   }
 
@@ -690,12 +767,13 @@ class TutorService {
     customDosage?: string;
     instructions?: string;
     schedules: Array<{ time: string; days: number[] }>;
+    voiceMessageId?: string | null;
     isChronic?: boolean;
     endDate?: Date | string | null;
     scheduleType?: 'daily' | 'weekly' | 'interval' | 'monthly' | 'custom';
     intervalHours?: number | null;
   }) {
-    const { patientId, medicationName, medicationGenericName, medicationDosage, medicationForm, medicationDescription, medicationImageUrl, customDosage, instructions, schedules, isChronic, endDate, scheduleType, intervalHours } = payload;
+    const { patientId, medicationName, medicationGenericName, medicationDosage, medicationForm, medicationDescription, medicationImageUrl, customDosage, instructions, schedules, voiceMessageId, isChronic, endDate, scheduleType, intervalHours } = payload;
     try {
       // Verify relationship - allow both tuteur and medecin
       const relation = await prisma.userRelationship.findFirst({
@@ -736,6 +814,7 @@ class TutorService {
           patientId,
           medicationId: medication.id,
           prescribedBy: tutorId,
+          voiceMessageId: voiceMessageId || undefined,
           customDosage: customDosage || undefined,
           instructions: instructions || undefined,
           startDate: startOfToday,
@@ -786,6 +865,23 @@ class TutorService {
         include: { medication: true, schedules: true }
       });
 
+      // Send SMS notification to patient about new prescription
+      try {
+        const patient = await prisma.user.findUnique({
+          where: { id: patientId },
+          select: { phoneNumber: true }
+        });
+        
+        if (patient?.phoneNumber) {
+          console.log('📱 Sending SMS notification to patient about new prescription...');
+          await smsService.sendUpdateNotification(patient.phoneNumber, 'new_prescription');
+          console.log('✅ SMS notification sent successfully');
+        }
+      } catch (smsError) {
+        console.error('⚠️ Warning: Failed to send SMS notification:', smsError);
+        // Don't fail the prescription creation if SMS fails
+      }
+
       return created;
     } catch (error) {
       console.error('Error creating prescription for patient:', error);
@@ -806,6 +902,7 @@ class TutorService {
     customDosage?: string;
     instructions?: string;
     schedules?: Array<{ time: string; days: number[] }>;
+    voiceMessageId?: string | null;
     isChronic?: boolean;
     endDate?: Date | string | null;
     scheduleType?: 'daily' | 'weekly' | 'interval' | 'monthly' | 'custom';
@@ -862,6 +959,7 @@ class TutorService {
         where: { id: prescriptionId },
         data: {
           medicationId,
+          voiceMessageId: payload.voiceMessageId !== undefined ? (payload.voiceMessageId || null) : prescription.voiceMessageId,
           customDosage: payload.customDosage !== undefined ? payload.customDosage : prescription.customDosage,
           instructions: payload.instructions !== undefined ? payload.instructions : prescription.instructions,
           endDate: payload.endDate !== undefined ? (payload.endDate ? new Date(payload.endDate as any) : null) : prescription.endDate,
@@ -918,6 +1016,23 @@ class TutorService {
         include: { medication: true, schedules: true }
       });
 
+      // Send SMS notification to patient about updated prescription
+      try {
+        const patient = await prisma.user.findUnique({
+          where: { id: prescription.patientId },
+          select: { phoneNumber: true }
+        });
+        
+        if (patient?.phoneNumber) {
+          console.log('📱 Sending SMS notification to patient about prescription update...');
+          await smsService.sendUpdateNotification(patient.phoneNumber, 'updated_prescription');
+          console.log('✅ SMS notification sent successfully');
+        }
+      } catch (smsError) {
+        console.error('⚠️ Warning: Failed to send SMS notification:', smsError);
+        // Don't fail the prescription update if SMS fails
+      }
+
       return result;
     } catch (error) {
       console.error('Error updating prescription:', error);
@@ -965,6 +1080,23 @@ class TutorService {
         where: { prescriptionId },
         data: { isActive: false }
       });
+
+      // Send SMS notification to patient about deleted prescription
+      try {
+        const patient = await prisma.user.findUnique({
+          where: { id: prescription.patientId },
+          select: { phoneNumber: true }
+        });
+        
+        if (patient?.phoneNumber) {
+          console.log('📱 Sending SMS notification to patient about prescription deletion...');
+          await smsService.sendUpdateNotification(patient.phoneNumber, 'deleted_prescription');
+          console.log('✅ SMS notification sent successfully');
+        }
+      } catch (smsError) {
+        console.error('⚠️ Warning: Failed to send SMS notification:', smsError);
+        // Don't fail the prescription deletion if SMS fails
+      }
 
       return { success: true, id: prescriptionId };
     } catch (error) {
@@ -1140,7 +1272,9 @@ class TutorService {
         durationSeconds: m.durationSeconds,
         createdAt: m.createdAt,
         fileUrl: m.fileUrl,
-        fileName: m.fileName
+        fileName: m.fileName,
+        title: m.title,
+        isActive: m.isActive
       }));
     } catch (error) {
       console.error('Error fetching voice messages:', error);
@@ -1151,7 +1285,7 @@ class TutorService {
   /**
    * Create a new voice message entry after upload
    */
-  async createVoiceMessage(tutorId: string, data: { patientId: string; fileUrl: string; fileName?: string; durationSeconds?: number }) {
+  async createVoiceMessage(tutorId: string, data: { patientId: string; fileUrl: string; fileName?: string; title?: string; durationSeconds?: number }) {
     try {
       // Validate relationship - allow both tuteur and medecin
       const relation = await prisma.userRelationship.findFirst({
@@ -1166,15 +1300,35 @@ class TutorService {
         throw new Error('Unauthorized: not linked to this patient');
       }
 
+      const fileName = data.fileName || `voice_${Date.now()}.m4a`;
       const created = await prisma.voiceMessage.create({
         data: {
           creatorId: tutorId,
           patientId: data.patientId,
           fileUrl: data.fileUrl,
-          fileName: data.fileName || `voice_${Date.now()}.m4a`,
+          fileName: fileName,
+          title: data.title && data.title.trim() ? data.title.trim() : fileName,
           durationSeconds: data.durationSeconds || 0
         }
       });
+
+      // Send SMS notification to patient about new voice message
+      try {
+        const patient = await prisma.user.findUnique({
+          where: { id: data.patientId },
+          select: { phoneNumber: true }
+        });
+        
+        if (patient?.phoneNumber) {
+          console.log('📱 Sending SMS notification to patient about new voice message...');
+          await smsService.sendUpdateNotification(patient.phoneNumber, 'new_voice_message');
+          console.log('✅ SMS notification sent successfully');
+        }
+      } catch (smsError) {
+        console.error('⚠️ Warning: Failed to send SMS notification:', smsError);
+        // Don't fail the voice message creation if SMS fails
+      }
+
       return created;
     } catch (error) {
       console.error('Error creating voice message:', error);
@@ -1187,7 +1341,10 @@ class TutorService {
    */
   async deleteVoiceMessage(tutorId: string, voiceMessageId: string) {
     try {
-      const existing = await prisma.voiceMessage.findUnique({ where: { id: voiceMessageId } });
+      const existing = await prisma.voiceMessage.findUnique({ 
+        where: { id: voiceMessageId },
+        include: { patient: { select: { phoneNumber: true } } }
+      });
       if (!existing || existing.creatorId !== tutorId) {
         throw new Error('Not found or unauthorized');
       }
@@ -1195,6 +1352,19 @@ class TutorService {
         where: { id: voiceMessageId },
         data: { isActive: false }
       });
+
+      // Send SMS notification to patient about deleted voice message
+      try {
+        if (existing.patient?.phoneNumber) {
+          console.log('📱 Sending SMS notification to patient about voice message deletion...');
+          await smsService.sendUpdateNotification(existing.patient.phoneNumber, 'deleted_voice_message');
+          console.log('✅ SMS notification sent successfully');
+        }
+      } catch (smsError) {
+        console.error('⚠️ Warning: Failed to send SMS notification:', smsError);
+        // Don't fail the voice message deletion if SMS fails
+      }
+
       return { success: true, id: deleted.id };
     } catch (error) {
       console.error('Error deleting voice message:', error);
