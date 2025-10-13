@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import prisma from '../config/database.js';
 import { LoginRequest, LoginResponse, RegisterRequest, JWTPayload } from '../types/auth.types.js';
 import { smsService } from './sms.service.js';
+import { normalizePhoneNumber, normalizeEmail } from '../utils/phoneNormalizer.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
@@ -145,36 +146,30 @@ export class AuthService {
 
       if (isEmail) {
         // Find user by email
-        const emailLower = cleanInput.toLowerCase();
-        console.log('📧 Searching for email:', emailLower);
+        const emailNormalized = normalizeEmail(cleanInput);
+        console.log('📧 Searching for email:', emailNormalized);
         user = await prisma.user.findUnique({
-          where: { email: emailLower }
+          where: { email: emailNormalized }
         });
         console.log('📧 Email search result:', user ? `Found user ${user.id}` : 'Not found');
       } else if (isPhone) {
-        // Clean phone number (remove spaces, dashes, parentheses)
-        const cleanPhone = cleanInput.replace(/[\s\-\(\)]/g, '');
-        console.log('📱 Searching for phone:', cleanPhone);
+        // Normalize phone number
+        const phoneResult = normalizePhoneNumber(cleanInput);
+        console.log('📱 Normalized phone:', phoneResult.normalized);
+        console.log('🔍 Trying phone formats:', phoneResult.formats);
 
-        // Build search array with different formats including Tunisia country code
-        const phoneFormats: string[] = [
-          cleanPhone, // Original: 52536742
-          `+${cleanPhone}`, // With +: +52536742
-          cleanPhone.startsWith('+') ? cleanPhone.substring(1) : `+${cleanPhone}` // Toggle +
-        ];
-        
-        // If phone doesn't start with country code, try Tunisia (+216)
-        if (!cleanPhone.startsWith('+') && !cleanPhone.startsWith('216')) {
-          phoneFormats.push(`+216${cleanPhone}`); // +21652536742
-          phoneFormats.push(`216${cleanPhone}`);  // 21652536742
+        if (!phoneResult.isValid) {
+          console.warn('⚠️ Invalid phone format:', cleanInput);
+          return {
+            success: false,
+            message: 'Format de numéro de téléphone invalide'
+          };
         }
-        
-        console.log('🔍 Trying phone formats:', phoneFormats);
 
-        // Find user by phone number (try different formats)
+        // Find user by phone number (try all possible formats)
         user = await prisma.user.findFirst({
           where: {
-            OR: phoneFormats.map(phone => ({ phoneNumber: phone }))
+            OR: phoneResult.formats.map(phone => ({ phoneNumber: phone }))
           }
         });
         console.log('📱 Phone search result:', user ? `Found user ${user.id}` : 'Not found');
@@ -274,15 +269,45 @@ export class AuthService {
     try {
       const { email, password, firstName, lastName, phoneNumber, userType } = registerData;
 
-      // Check if user already exists
-      const existingUser = await prisma.user.findUnique({
-        where: { email: email.toLowerCase() }
-      });
+      // Normalize email and phone
+      const emailNormalized = normalizeEmail(email);
+      const phoneResult = normalizePhoneNumber(phoneNumber);
 
-      if (existingUser) {
+      console.log('📝 Registration attempt:');
+      console.log('  📧 Email:', emailNormalized);
+      console.log('  📱 Phone (normalized):', phoneResult.normalized);
+
+      // Validate phone number
+      if (!phoneResult.isValid) {
         return {
           success: false,
-          message: 'User with this email already exists'
+          message: 'Format de numéro de téléphone invalide'
+        };
+      }
+
+      // Check if email already exists
+      const existingEmail = await prisma.user.findUnique({
+        where: { email: emailNormalized }
+      });
+
+      if (existingEmail) {
+        return {
+          success: false,
+          message: 'Un compte existe déjà avec cet email'
+        };
+      }
+
+      // Check if phone already exists (try all formats)
+      const existingPhone = await prisma.user.findFirst({
+        where: {
+          OR: phoneResult.formats.map(phone => ({ phoneNumber: phone }))
+        }
+      });
+
+      if (existingPhone) {
+        return {
+          success: false,
+          message: 'Un compte existe déjà avec ce numéro de téléphone'
         };
       }
 
@@ -290,14 +315,14 @@ export class AuthService {
       const saltRounds = 12;
       const passwordHash = await bcrypt.hash(password, saltRounds);
 
-      // Create user
+      // Create user with normalized data
       const user = await prisma.user.create({
         data: {
-          email: email.toLowerCase(),
+          email: emailNormalized,
           passwordHash,
           firstName,
           lastName,
-          phoneNumber,
+          phoneNumber: phoneResult.normalized, // Save in normalized format
           userType
         }
       });
@@ -409,25 +434,36 @@ export class AuthService {
       console.log('═══════════════════════════════════════════════════');
       console.log('🔐 SENDING VERIFICATION CODE');
       console.log('═══════════════════════════════════════════════════');
-      console.log('📱 Phone number:', phoneNumber);
+      console.log('📱 Phone number (input):', phoneNumber);
+      
+      // Normalize phone number
+      const phoneResult = normalizePhoneNumber(phoneNumber);
+      console.log('📱 Phone number (normalized):', phoneResult.normalized);
+      
+      if (!phoneResult.isValid) {
+        return {
+          success: false,
+          message: 'Format de numéro de téléphone invalide'
+        };
+      }
       
       // Generate a 4-digit verification code (1000-9999)
       const verificationCode = Math.floor(1000 + Math.random() * 9000).toString();
       console.log('🔢 Generated 4-digit code:', verificationCode);
       
-      // Store the verification code with timestamp
-      verificationCodes.set(phoneNumber, {
+      // Store with NORMALIZED phone number as key
+      verificationCodes.set(phoneResult.normalized, {
         code: verificationCode,
         timestamp: Date.now()
       });
       
-      console.log('💾 Code stored in memory');
+      console.log('💾 Code stored with normalized phone');
       
       // Clean up expired codes
       cleanupExpiredCodes();
       console.log('🧹 Expired codes cleaned up');
       
-      // Send SMS via Educanet
+      // Send SMS via Educanet (use original or normalized)
       console.log('📤 Sending SMS with verification code...');
       const smsResult = await smsService.sendVerificationCode(phoneNumber, verificationCode);
       
@@ -461,14 +497,25 @@ export class AuthService {
     console.log('═══════════════════════════════════════════════════');
     console.log('🔍 VERIFYING CODE');
     console.log('═══════════════════════════════════════════════════');
-    console.log('📱 Phone number:', phoneNumber);
+    console.log('📱 Phone number (input):', phoneNumber);
     console.log('🔢 Code provided:', code);
+    
+    // Normalize phone number
+    const phoneResult = normalizePhoneNumber(phoneNumber);
+    console.log('📱 Phone number (normalized):', phoneResult.normalized);
+    
+    if (!phoneResult.isValid) {
+      return {
+        success: false,
+        message: 'Format de numéro de téléphone invalide'
+      };
+    }
     
     // Clean up expired codes first
     cleanupExpiredCodes();
     
-    // Get the stored verification code
-    const storedCodeData = verificationCodes.get(phoneNumber);
+    // Get the stored verification code using NORMALIZED phone
+    const storedCodeData = verificationCodes.get(phoneResult.normalized);
     
     if (!storedCodeData) {
       console.log('❌ No code found for this phone number');
@@ -509,14 +556,25 @@ export class AuthService {
     console.log('═══════════════════════════════════════════════════');
     console.log('🔑 RESET PASSWORD WITH CODE');
     console.log('═══════════════════════════════════════════════════');
-    console.log('📱 Phone number:', phoneNumber);
+    console.log('📱 Phone number (input):', phoneNumber);
     console.log('🔢 Code:', code);
+    
+    // Normalize phone number
+    const phoneResult = normalizePhoneNumber(phoneNumber);
+    console.log('📱 Phone number (normalized):', phoneResult.normalized);
+    
+    if (!phoneResult.isValid) {
+      return {
+        success: false,
+        message: 'Format de numéro de téléphone invalide'
+      };
+    }
     
     // Clean up expired codes first
     cleanupExpiredCodes();
     
-    // Verify the code exists and matches
-    const storedCodeData = verificationCodes.get(phoneNumber);
+    // Verify the code exists and matches using NORMALIZED phone
+    const storedCodeData = verificationCodes.get(phoneResult.normalized);
     
     if (!storedCodeData) {
       console.log('❌ No code found for this phone number');
@@ -537,28 +595,12 @@ export class AuthService {
     console.log('✅ Code verified, proceeding with password reset...');
     
     try {
-      // Find user by phone number - handle multiple formats including Tunisia country code
-      const cleanPhone = phoneNumber.replace(/[\s\-\(\)]/g, '');
-      console.log('🔍 Searching for phone number:', cleanPhone);
-      
-      // Build search array with different formats
-      const phoneFormats: string[] = [
-        cleanPhone, // Original: 52536742
-        `+${cleanPhone}`, // With +: +52536742
-        cleanPhone.startsWith('+') ? cleanPhone.substring(1) : `+${cleanPhone}` // Toggle +
-      ];
-      
-      // If phone doesn't start with country code, try Tunisia (+216)
-      if (!cleanPhone.startsWith('+') && !cleanPhone.startsWith('216')) {
-        phoneFormats.push(`+216${cleanPhone}`); // +21652536742
-        phoneFormats.push(`216${cleanPhone}`);  // 21652536742
-      }
-      
-      console.log('🔍 Trying phone formats:', phoneFormats);
+      // Find user by phone number using all possible formats
+      console.log('🔍 Searching for user with phone formats:', phoneResult.formats);
       
       const user = await prisma.user.findFirst({
         where: {
-          OR: phoneFormats.map(phone => ({ phoneNumber: phone }))
+          OR: phoneResult.formats.map(phone => ({ phoneNumber: phone }))
         }
       });
 
@@ -583,7 +625,7 @@ export class AuthService {
       });
 
       // NOW delete the verification code after successful password reset
-      verificationCodes.delete(phoneNumber);
+      verificationCodes.delete(phoneResult.normalized);
       console.log('🗑️ Verification code deleted after successful password reset');
 
       console.log('✅ Password updated successfully');

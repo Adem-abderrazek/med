@@ -8,7 +8,9 @@
     "build": "npx prisma generate && tsc",
     "start": "npx prisma migrate deploy && node dist/index.js",
     "test": "jest",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "db:list-users": "node list-users.js",
+    "db:delete-user": "node delete-users.js"
   },
   "prisma": {
     "seed": "node prisma/js-seeds/seed-with-reminders.cjs"

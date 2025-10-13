@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { smsService } from './sms.service.js';
 import { reminderGeneratorService } from './reminder-generator.service.js';
 import bcrypt from 'bcryptjs';
+import { normalizePhoneNumber } from '../utils/phoneNormalizer.js';
 const prisma = new PrismaClient();
 class TutorService {
     /**
@@ -214,21 +215,19 @@ class TutorService {
             console.log('───────────────────────────────────────────────────');
             console.log('📤 STEP 2: CHECKING FOR EXISTING PATIENT');
             console.log('───────────────────────────────────────────────────');
-            // Normalize phone number for searching (try multiple formats)
-            const cleanPhone = patientData.phoneNumber.replace(/[\s\-\(\)]/g, '');
-            console.log('🔍 Searching for patient with phone:', cleanPhone);
-            // Check if a patient already exists with the same phone number (try different formats)
+            // Normalize phone number for searching
+            const phoneResult = normalizePhoneNumber(patientData.phoneNumber);
+            console.log('📱 Phone (input):', patientData.phoneNumber);
+            console.log('📱 Phone (normalized):', phoneResult.normalized);
+            console.log('🔍 Searching with formats:', phoneResult.formats);
+            if (!phoneResult.isValid) {
+                throw new Error('Format de numéro de téléphone invalide');
+            }
+            // Check if a patient already exists with the same phone number
             const existingPatient = await prisma.user.findFirst({
                 where: {
                     userType: 'patient',
-                    OR: [
-                        { phoneNumber: cleanPhone },
-                        { phoneNumber: `+${cleanPhone}` },
-                        { phoneNumber: cleanPhone.startsWith('+') ? cleanPhone.substring(1) : `+${cleanPhone}` },
-                        // Also try with Tunisia code if not present
-                        { phoneNumber: cleanPhone.startsWith('216') ? `+${cleanPhone}` : `+216${cleanPhone}` },
-                        { phoneNumber: cleanPhone.startsWith('0') ? `+216${cleanPhone.substring(1)}` : cleanPhone }
-                    ]
+                    OR: phoneResult.formats.map(phone => ({ phoneNumber: phone }))
                 }
             });
             console.log('🔍 Existing patient found:', !!existingPatient);
@@ -274,7 +273,7 @@ class TutorService {
                         passwordHash,
                         firstName: patientData.firstName,
                         lastName: patientData.lastName,
-                        phoneNumber: patientData.phoneNumber,
+                        phoneNumber: phoneResult.normalized, // Save normalized phone
                         userType: 'patient',
                         isActive: true
                     }
