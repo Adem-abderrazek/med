@@ -22,28 +22,19 @@ try {
           privateKey,
           clientEmail,
         }),
-        storageBucket: `${projectId}.appspot.com`,
       });
       firebaseInitialized = true;
       console.log('✅ Firebase initialized with env vars');
     } else {
-      // Development: Use service account file
-      const serviceAccountPath = path.join(process.cwd(), 'medic-2eb2e-firebase-adminsdk.json');
-      const serviceAccount = require(serviceAccountPath);
-
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-        projectId: 'medic-2eb2e',
-        storageBucket: 'medic-2eb2e.appspot.com',
-      });
-
-      firebaseInitialized = true;
-      console.log('🔥 Firebase Admin SDK initialized successfully');
+      // No Firebase credentials - skip initialization
+      console.log('⚠️ No Firebase credentials found, using Expo Push API only');
+      firebaseInitialized = false;
     }
   }
 } catch (error) {
   console.error('❌ Failed to initialize Firebase Admin SDK:', error);
   console.log('⚠️ Falling back to Expo Push API');
+  firebaseInitialized = false;
 }
 
 interface PushNotificationPayload {
