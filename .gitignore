@@ -47,6 +47,8 @@ uploads/**/*.wav
 *.json.key
 *-firebase-adminsdk-*.json
 firebase-adminsdk-*.json
+medic-2eb2e-firebase-adminsdk.json
+medicare-244b3-firebase-adminsdk-fbsvc-21e2b2edf9.json
 
 # Development scripts
 check-*.js

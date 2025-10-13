@@ -33,12 +33,12 @@ try {
       // Development: Use service account file
       console.log('🔥 Initializing Firebase with service account file (development)');
       try {
-        const serviceAccountPath = path.join(process.cwd(), 'medicare-244b3-firebase-adminsdk-fbsvc-21e2b2edf9.json');
+        const serviceAccountPath = path.join(process.cwd(), 'medic-2eb2e-firebase-adminsdk.json');
         const serviceAccount = require(serviceAccountPath);
 
         admin.initializeApp({
           credential: admin.credential.cert(serviceAccount),
-          storageBucket: 'medicare-244b3.appspot.com',
+          storageBucket: 'medic-2eb2e.appspot.com',
         });
         firebaseInitialized = true;
         console.log('✅ Firebase initialized with service account file');
