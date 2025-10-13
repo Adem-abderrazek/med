@@ -13,6 +13,9 @@ router.get('/medications/by-date', (req, res) => patientController.getMedication
 router.get('/medications/overdue', (req, res) => patientController.getOverdueMedications(req, res));
 router.get('/medications/next', (req, res) => patientController.getNextMedications(req, res));
 router.post('/medications/mark-taken', (req, res) => patientController.markMedicationTaken(req, res));
+// Offline sync endpoints
+router.get('/reminders/upcoming', (req, res) => patientController.getUpcomingReminders(req, res));
+router.get('/check-updates', (req, res) => patientController.checkForUpdates(req, res));
 // Message endpoints
 router.get('/messages', (req, res) => patientController.getPatientMessages(req, res));
 router.get('/messages/tutors', (req, res) => patientController.getTutorMessages(req, res));

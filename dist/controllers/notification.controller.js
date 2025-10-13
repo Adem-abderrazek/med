@@ -91,7 +91,7 @@ export class NotificationController {
                 where: {
                     id: { in: reminderIds },
                     patientId: userId,
-                    status: 'scheduled',
+                    status: { in: ['scheduled', 'sent'] }, // Allow both scheduled and sent
                 },
                 data: {
                     status: 'confirmed',
@@ -152,7 +152,7 @@ export class NotificationController {
                 where: {
                     id: { in: reminderIds },
                     patientId: userId,
-                    status: 'scheduled',
+                    status: { in: ['scheduled', 'sent'] }, // Allow both scheduled and sent
                 },
                 data: {
                     snoozedUntil: snoozeUntil,

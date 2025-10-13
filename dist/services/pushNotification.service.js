@@ -23,9 +23,31 @@ catch (error) {
 export class PushNotificationService {
     expoApiUrl = 'https://exp.host/--/api/v2/push/send';
     /**
+     * Validate if a push token is valid
+     */
+    isValidPushToken(token) {
+        if (!token)
+            return false;
+        // Check for invalid test/fallback tokens
+        if (token.includes('LOGIN_') || token.includes('TEST_') || token.includes('FALLBACK_')) {
+            console.log('⚠️ Invalid push token detected (test/fallback token):', token.substring(0, 30) + '...');
+            return false;
+        }
+        // Valid Expo token format: ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]
+        const expoTokenPattern = /^ExponentPushToken\[[a-zA-Z0-9_-]{20,}\]$/;
+        // Valid FCM token format: long alphanumeric string
+        const fcmTokenPattern = /^[a-zA-Z0-9_-]{140,}$/;
+        return expoTokenPattern.test(token) || fcmTokenPattern.test(token);
+    }
+    /**
      * Send push notification via Firebase or Expo (with fallback)
      */
     async sendPushNotification(token, title, body, data) {
+        // Validate token first
+        if (!this.isValidPushToken(token)) {
+            console.log('❌ Invalid push token, skipping notification send');
+            return false;
+        }
         // Try Firebase first if available
         if (firebaseInitialized && admin && admin.apps && admin.apps.length > 0) {
             return this.sendFirebaseNotification(token, title, body, data);

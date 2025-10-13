@@ -156,6 +156,7 @@ model Prescription {
   patientId     String
   medicationId  String
   prescribedBy  String
+  voiceMessageId String?
   customDosage  String?
   instructions  String?
   startDate     DateTime
@@ -168,6 +169,7 @@ model Prescription {
   patient     User       @relation("PatientPrescriptions", fields: [patientId], references: [id], onDelete: Cascade)
   medication  Medication @relation(fields: [medicationId], references: [id], onDelete: Restrict)
   doctor      User       @relation("DoctorPrescriptions", fields: [prescribedBy], references: [id], onDelete: Cascade)
+  voiceMessage VoiceMessage? @relation("PrescriptionVoiceMessage", fields: [voiceMessageId], references: [id], onDelete: SetNull)
   schedules   MedicationSchedule[]
   reminders   MedicationReminder[]
 
@@ -211,6 +213,7 @@ model VoiceMessage {
   patientId      String
   fileUrl        String
   fileName       String
+  title          String?
   durationSeconds Int
   isActive       Boolean   @default(true)
   createdAt      DateTime  @default(now())
@@ -218,9 +221,10 @@ model VoiceMessage {
 
   creator User @relation("CreatedVoiceMessages", fields: [creatorId], references: [id], onDelete: Cascade)
   patient User @relation("PatientVoiceMessages", fields: [patientId], references: [id], onDelete: Cascade)
+  prescriptions Prescription[] @relation("PrescriptionVoiceMessage")
+  reminders MedicationReminder[]
 
   @@map("voice_messages")
-  MedicationReminder MedicationReminder[]
 }
 
 model StandardVoiceMessage {

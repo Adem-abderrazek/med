@@ -253,5 +253,59 @@ class PatientController {
             });
         }
     }
+    /**
+     * Get upcoming medication reminders with voice messages for offline sync
+     */
+    async getUpcomingReminders(req, res) {
+        try {
+            const patientId = req.user.userId;
+            const daysAhead = parseInt(req.query.days) || 30;
+            console.log('📱 Getting upcoming reminders for offline sync');
+            console.log('Patient ID:', patientId);
+            console.log('Days ahead:', daysAhead);
+            const reminders = await patientService.getUpcomingReminders(patientId, daysAhead);
+            res.json({
+                success: true,
+                data: reminders,
+                message: `Found ${reminders.length} upcoming reminders`
+            });
+        }
+        catch (error) {
+            console.error('Error in getUpcomingReminders controller:', error);
+            res.status(500).json({
+                success: false,
+                message: error?.message || 'Failed to get upcoming reminders'
+            });
+        }
+    }
+    /**
+     * Check if patient has updates since last sync
+     */
+    async checkForUpdates(req, res) {
+        try {
+            const patientId = req.user.userId;
+            const lastSyncTime = req.query.lastSync
+                ? new Date(req.query.lastSync)
+                : undefined;
+            console.log('🔍 Checking for updates');
+            console.log('Patient ID:', patientId);
+            console.log('Last sync time:', lastSyncTime?.toISOString() || 'Never');
+            const updateStatus = await patientService.checkForUpdates(patientId, lastSyncTime);
+            res.json({
+                success: true,
+                data: updateStatus,
+                message: updateStatus.hasUpdates
+                    ? 'Updates available'
+                    : 'No updates available'
+            });
+        }
+        catch (error) {
+            console.error('Error in checkForUpdates controller:', error);
+            res.status(500).json({
+                success: false,
+                message: error?.message || 'Failed to check for updates'
+            });
+        }
+    }
 }
 export default new PatientController();

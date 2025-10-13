@@ -678,5 +678,324 @@ export class PatientService {
             throw new Error('Failed to get medications for date');
         }
     }
+    /**
+     * Get upcoming medication reminders with voice messages for offline sync
+     */
+    async getUpcomingReminders(patientId, daysAhead = 30) {
+        try {
+            const now = new Date();
+            const futureDate = new Date();
+            futureDate.setDate(now.getDate() + daysAhead);
+            console.log('🔍 Fetching upcoming reminders for patient:', patientId);
+            console.log('📅 Date range:', now.toISOString(), 'to', futureDate.toISOString());
+            // Get all upcoming medication reminders with voice messages
+            const reminders = await prisma.medicationReminder.findMany({
+                where: {
+                    patientId: patientId,
+                    scheduledFor: {
+                        gte: now,
+                        lte: futureDate
+                    },
+                    status: {
+                        in: ['scheduled', 'sent']
+                    }
+                },
+                include: {
+                    prescription: {
+                        include: {
+                            medication: true,
+                            voiceMessage: true // Include prescription's voice message
+                        }
+                    },
+                    voiceMessage: true,
+                    standardVoiceMessage: true
+                },
+                orderBy: {
+                    scheduledFor: 'asc'
+                }
+            });
+            // Transform to include voice URL with fallback logic
+            const transformedReminders = reminders.map(reminder => {
+                // Voice priority: 
+                // 1. Prescription's specific voice message
+                // 2. Reminder's linked voice message
+                // 3. Standard voice message
+                // 4. null
+                let voiceUrl = null;
+                let voiceFileName = null;
+                let voiceTitle = null;
+                let voiceDuration = 0;
+                // Priority 1: Check prescription's voice message
+                if (reminder.prescription.voiceMessage && reminder.prescription.voiceMessage.isActive) {
+                    voiceUrl = reminder.prescription.voiceMessage.fileUrl;
+                    voiceFileName = reminder.prescription.voiceMessage.fileName;
+                    voiceTitle = reminder.prescription.voiceMessage.title;
+                    voiceDuration = reminder.prescription.voiceMessage.durationSeconds;
+                }
+                // Priority 2: Check reminder's voice message
+                else if (reminder.voiceMessage && reminder.voiceMessage.isActive) {
+                    voiceUrl = reminder.voiceMessage.fileUrl;
+                    voiceFileName = reminder.voiceMessage.fileName;
+                    voiceTitle = reminder.voiceMessage.title;
+                    voiceDuration = reminder.voiceMessage.durationSeconds;
+                }
+                // Priority 3: Check standard voice message
+                else if (reminder.standardVoiceMessage && reminder.standardVoiceMessage.isActive) {
+                    voiceUrl = reminder.standardVoiceMessage.fileUrl;
+                    voiceFileName = `standard_${reminder.standardVoiceMessage.messageKey}.m4a`;
+                    voiceTitle = reminder.standardVoiceMessage.description;
+                    voiceDuration = reminder.standardVoiceMessage.durationSeconds;
+                }
+                return {
+                    id: reminder.id,
+                    reminderId: reminder.id,
+                    prescriptionId: reminder.prescriptionId,
+                    medicationName: reminder.prescription.medication.name,
+                    dosage: reminder.prescription.customDosage || reminder.prescription.medication.dosage || 'Non spécifié',
+                    instructions: reminder.prescription.instructions,
+                    imageUrl: reminder.prescription.medication.imageUrl,
+                    scheduledFor: reminder.scheduledFor.toISOString(),
+                    status: reminder.status,
+                    voiceUrl: voiceUrl,
+                    voiceFileName: voiceFileName,
+                    voiceTitle: voiceTitle,
+                    voiceDuration: voiceDuration,
+                    patientId: reminder.patientId
+                };
+            });
+            console.log(`✅ Found ${transformedReminders.length} upcoming reminders`);
+            return transformedReminders;
+        }
+        catch (error) {
+            console.error('Error getting upcoming reminders:', error);
+            throw new Error('Failed to get upcoming reminders');
+        }
+    }
+    /**
+     * Check if patient has updates since last sync
+     */
+    async checkForUpdates(patientId, lastSyncTime) {
+        try {
+            if (!lastSyncTime) {
+                return { hasUpdates: true, lastModified: new Date() };
+            }
+            // Check if any prescriptions have been modified since last sync
+            const modifiedPrescriptions = await prisma.prescription.findMany({
+                where: {
+                    patientId: patientId,
+                    OR: [
+                        { updatedAt: { gt: lastSyncTime } },
+                        { createdAt: { gt: lastSyncTime } }
+                    ]
+                },
+                select: { id: true, updatedAt: true }
+            });
+            // Check if any voice messages have been modified
+            const modifiedVoiceMessages = await prisma.voiceMessage.findMany({
+                where: {
+                    patientId: patientId,
+                    OR: [
+                        { updatedAt: { gt: lastSyncTime } },
+                        { createdAt: { gt: lastSyncTime } }
+                    ]
+                },
+                select: { id: true, updatedAt: true }
+            });
+            const hasUpdates = modifiedPrescriptions.length > 0 || modifiedVoiceMessages.length > 0;
+            const lastModified = hasUpdates
+                ? new Date(Math.max(...modifiedPrescriptions.map(p => p.updatedAt.getTime()), ...modifiedVoiceMessages.map(v => v.updatedAt.getTime())))
+                : lastSyncTime;
+            return { hasUpdates, lastModified };
+        }
+        catch (error) {
+            console.error('Error checking for updates:', error);
+            throw new Error('Failed to check for updates');
+        }
+    }
+    /**
+     * Get comprehensive adherence history for a patient
+     */
+    async getPatientAdherenceHistory(patientId, daysBack = 30) {
+        try {
+            const endDate = new Date();
+            const startDate = new Date();
+            startDate.setDate(endDate.getDate() - daysBack);
+            startDate.setHours(0, 0, 0, 0);
+            endDate.setHours(23, 59, 59, 999);
+            console.log('📊 Fetching adherence history for patient:', patientId);
+            console.log('📅 Date range:', startDate.toISOString(), 'to', endDate.toISOString());
+            // Get all reminders in the date range
+            const reminders = await prisma.medicationReminder.findMany({
+                where: {
+                    patientId: patientId,
+                    scheduledFor: {
+                        gte: startDate,
+                        lte: endDate
+                    }
+                },
+                include: {
+                    prescription: {
+                        include: {
+                            medication: true
+                        }
+                    }
+                },
+                orderBy: {
+                    scheduledFor: 'desc'
+                }
+            });
+            // Calculate overall statistics with proper missed logic
+            const now = new Date();
+            const totalReminders = reminders.length;
+            const takenReminders = reminders.filter(r => r.status === 'confirmed' || r.status === 'manual_confirm').length;
+            // Missed = explicitly marked as missed OR past due and not taken
+            const missedReminders = reminders.filter(r => {
+                if (r.status === 'missed')
+                    return true;
+                if ((r.status === 'scheduled' || r.status === 'sent') && new Date(r.scheduledFor) < now) {
+                    return true; // Past due = missed
+                }
+                return false;
+            }).length;
+            // Pending = future scheduled medications only
+            const pendingReminders = reminders.filter(r => (r.status === 'scheduled' || r.status === 'sent') && new Date(r.scheduledFor) >= now).length;
+            const overallAdherenceRate = totalReminders > 0
+                ? Math.round((takenReminders / totalReminders) * 100)
+                : 0;
+            // Group by date for daily adherence
+            const dailyAdherence = [];
+            const dateMap = new Map();
+            for (let i = 0; i < daysBack; i++) {
+                const date = new Date(startDate);
+                date.setDate(startDate.getDate() + i);
+                const dateStr = date.toISOString().split('T')[0];
+                const dayReminders = reminders.filter(r => {
+                    const reminderDate = new Date(r.scheduledFor).toISOString().split('T')[0];
+                    return reminderDate === dateStr;
+                });
+                const dayTaken = dayReminders.filter(r => r.status === 'confirmed' || r.status === 'manual_confirm').length;
+                const dayTotal = dayReminders.length;
+                // Missed = explicitly missed OR past due and not taken
+                const dayMissed = dayReminders.filter(r => {
+                    if (r.status === 'missed')
+                        return true;
+                    if ((r.status === 'scheduled' || r.status === 'sent') && new Date(r.scheduledFor) < now) {
+                        return true;
+                    }
+                    return false;
+                }).length;
+                const dayRate = dayTotal > 0 ? Math.round((dayTaken / dayTotal) * 100) : 0;
+                dailyAdherence.push({
+                    date: dateStr,
+                    total: dayTotal,
+                    taken: dayTaken,
+                    missed: dayMissed,
+                    pending: dayTotal - dayTaken - dayMissed,
+                    adherenceRate: dayRate
+                });
+            }
+            // Group by medication for medication-specific adherence
+            const medicationMap = new Map();
+            reminders.forEach(reminder => {
+                const medId = reminder.prescription.medication.id;
+                const medName = reminder.prescription.medication.name;
+                if (!medicationMap.has(medId)) {
+                    medicationMap.set(medId, {
+                        id: medId,
+                        name: medName,
+                        total: 0,
+                        taken: 0,
+                        missed: 0,
+                        pending: 0
+                    });
+                }
+                const medStats = medicationMap.get(medId);
+                medStats.total++;
+                if (reminder.status === 'confirmed' || reminder.status === 'manual_confirm') {
+                    medStats.taken++;
+                }
+                else if (reminder.status === 'missed' ||
+                    ((reminder.status === 'scheduled' || reminder.status === 'sent') && new Date(reminder.scheduledFor) < now)) {
+                    medStats.missed++; // Past due = missed
+                }
+                else {
+                    medStats.pending++;
+                }
+            });
+            const medicationAdherence = Array.from(medicationMap.values()).map(med => ({
+                ...med,
+                adherenceRate: med.total > 0 ? Math.round((med.taken / med.total) * 100) : 0
+            }));
+            // Recent medication history (last 50 reminders) with computed status
+            const recentHistory = reminders.slice(0, 50).map(reminder => {
+                // Compute actual status (past due = missed)
+                let displayStatus = reminder.status;
+                if ((reminder.status === 'scheduled' || reminder.status === 'sent') &&
+                    new Date(reminder.scheduledFor) < now) {
+                    displayStatus = 'missed';
+                }
+                return {
+                    id: reminder.id,
+                    medicationName: reminder.prescription.medication.name,
+                    dosage: reminder.prescription.customDosage || reminder.prescription.medication.dosage,
+                    scheduledFor: reminder.scheduledFor.toISOString(),
+                    status: displayStatus, // Use computed status
+                    confirmedAt: reminder.confirmedAt?.toISOString() || null,
+                    snoozedUntil: reminder.snoozedUntil?.toISOString() || null
+                };
+            });
+            // Calculate weekly adherence (last 4 weeks)
+            const weeklyAdherence = [];
+            for (let week = 0; week < 4; week++) {
+                const weekEnd = new Date(endDate);
+                weekEnd.setDate(endDate.getDate() - (week * 7));
+                const weekStart = new Date(weekEnd);
+                weekStart.setDate(weekEnd.getDate() - 6);
+                const weekReminders = reminders.filter(r => {
+                    const reminderDate = new Date(r.scheduledFor);
+                    return reminderDate >= weekStart && reminderDate <= weekEnd;
+                });
+                const weekTaken = weekReminders.filter(r => r.status === 'confirmed' || r.status === 'manual_confirm').length;
+                const weekTotal = weekReminders.length;
+                // Missed = explicitly missed OR past due and not taken
+                const weekMissed = weekReminders.filter(r => {
+                    if (r.status === 'missed')
+                        return true;
+                    if ((r.status === 'scheduled' || r.status === 'sent') && new Date(r.scheduledFor) < now) {
+                        return true;
+                    }
+                    return false;
+                }).length;
+                const weekRate = weekTotal > 0 ? Math.round((weekTaken / weekTotal) * 100) : 0;
+                weeklyAdherence.unshift({
+                    weekNumber: 4 - week,
+                    startDate: weekStart.toISOString().split('T')[0],
+                    endDate: weekEnd.toISOString().split('T')[0],
+                    total: weekTotal,
+                    taken: weekTaken,
+                    missed: weekMissed,
+                    adherenceRate: weekRate
+                });
+            }
+            return {
+                overallStats: {
+                    totalReminders,
+                    takenReminders,
+                    missedReminders,
+                    pendingReminders,
+                    adherenceRate: overallAdherenceRate,
+                    period: `${daysBack} derniers jours`
+                },
+                dailyAdherence,
+                weeklyAdherence,
+                medicationAdherence,
+                recentHistory
+            };
+        }
+        catch (error) {
+            console.error('Error getting patient adherence history:', error);
+            throw new Error('Failed to get patient adherence history');
+        }
+    }
 }
 export const patientService = new PatientService();

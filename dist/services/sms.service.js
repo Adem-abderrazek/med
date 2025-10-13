@@ -148,5 +148,19 @@ export class SMSService {
         console.log('───────────────────────────────────────────────────');
         return result;
     }
+    async sendUpdateNotification(phoneNumber, updateType) {
+        console.log('───────────────────────────────────────────────────');
+        console.log('🔔 SENDING UPDATE NOTIFICATION SMS');
+        console.log('───────────────────────────────────────────────────');
+        console.log('📱 Phone number:', phoneNumber);
+        console.log('📝 Update type:', updateType);
+        const message = `MediCare: Votre medecin/tuteur a modifie votre traitement. Ouvrez l'app pour synchroniser.`;
+        console.log('📝 SMS message prepared:', message);
+        console.log('📝 Message length:', message.length);
+        const result = await this.sendSMS(phoneNumber, message);
+        console.log('🔔 Update notification SMS result:', result);
+        console.log('───────────────────────────────────────────────────');
+        return result;
+    }
 }
 export const smsService = new SMSService();

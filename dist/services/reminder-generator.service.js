@@ -71,16 +71,37 @@ export class ReminderGeneratorService {
                     console.log(`🚫 Skipping reminder due to exception: ${exception.reason}`);
                     continue;
                 }
-                // Create the medication reminder
+                // Get prescription to check if it has a specific voice message assigned
+                const prescription = await prisma.prescription.findUnique({
+                    where: { id: schedule.prescriptionId },
+                    select: { voiceMessageId: true }
+                });
+                // Use prescription's specific voice message, or fall back to patient's most recent voice
+                let voiceMessageId = prescription?.voiceMessageId;
+                if (!voiceMessageId) {
+                    // Fallback: Find the most recent active voice message for this patient
+                    const voiceMessage = await prisma.voiceMessage.findFirst({
+                        where: {
+                            patientId: schedule.prescription.patientId,
+                            isActive: true
+                        },
+                        orderBy: {
+                            createdAt: 'desc'
+                        }
+                    });
+                    voiceMessageId = voiceMessage?.id || null;
+                }
+                // Create the medication reminder with voice message link
                 const reminder = await prisma.medicationReminder.create({
                     data: {
                         prescriptionId: schedule.prescriptionId,
                         patientId: schedule.prescription.patientId,
                         scheduledFor: scheduledTime,
-                        status: ReminderStatus.scheduled
+                        status: ReminderStatus.scheduled,
+                        voiceMessageId: voiceMessageId
                     }
                 });
-                console.log(`✅ Created reminder for ${schedule.prescription.patient.firstName} - ${schedule.prescription.medication.name} at ${scheduledTime.toLocaleString()}`);
+                console.log(`✅ Created reminder for ${schedule.prescription.patient.firstName} - ${schedule.prescription.medication.name} at ${scheduledTime.toLocaleString()}${voiceMessageId ? ' (with voice message)' : ''}`);
                 remindersCreated++;
             }
             console.log(`🎉 Generated ${remindersCreated} new reminders for ${targetDate.toDateString()}`);
@@ -144,6 +165,51 @@ export class ReminderGeneratorService {
                 lastGeneratedAt: new Date()
             }
         });
+    }
+    /**
+     * Link existing reminders to voice messages (migration/repair utility)
+     */
+    async linkExistingRemindersToVoiceMessages() {
+        console.log('🔗 Linking existing reminders to voice messages...');
+        try {
+            // Get all reminders without voice messages
+            const reminders = await prisma.medicationReminder.findMany({
+                where: {
+                    voiceMessageId: null,
+                    status: { in: ['scheduled', 'sent'] }
+                },
+                select: {
+                    id: true,
+                    patientId: true
+                }
+            });
+            console.log(`📋 Found ${reminders.length} reminders without voice messages`);
+            let linkedCount = 0;
+            for (const reminder of reminders) {
+                // Find the most recent active voice message for this patient
+                const voiceMessage = await prisma.voiceMessage.findFirst({
+                    where: {
+                        patientId: reminder.patientId,
+                        isActive: true
+                    },
+                    orderBy: {
+                        createdAt: 'desc'
+                    }
+                });
+                if (voiceMessage) {
+                    await prisma.medicationReminder.update({
+                        where: { id: reminder.id },
+                        data: { voiceMessageId: voiceMessage.id }
+                    });
+                    linkedCount++;
+                }
+            }
+            console.log(`✅ Linked ${linkedCount} reminders to voice messages`);
+        }
+        catch (error) {
+            console.error('❌ Error linking reminders to voice messages:', error);
+            throw error;
+        }
     }
 }
 export const reminderGeneratorService = new ReminderGeneratorService();

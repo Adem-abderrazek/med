@@ -164,10 +164,18 @@ export class AuthService {
             }
             if (!user) {
                 console.log('❌ Login failed: User not found');
-                return {
-                    success: false,
-                    message: 'Identifiants invalides'
-                };
+                if (isEmail) {
+                    return {
+                        success: false,
+                        message: 'Aucun compte trouvé avec cette adresse e-mail'
+                    };
+                }
+                else {
+                    return {
+                        success: false,
+                        message: 'Aucun compte trouvé avec ce numéro de téléphone'
+                    };
+                }
             }
             // Check if user is active
             if (!user.isActive) {
@@ -179,9 +187,10 @@ export class AuthService {
             // Verify password
             const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
             if (!isPasswordValid) {
+                console.log('❌ Login failed: Invalid password');
                 return {
                     success: false,
-                    message: 'Identifiants invalides'
+                    message: 'Mot de passe incorrect'
                 };
             }
             // Create user session
@@ -361,8 +370,8 @@ export class AuthService {
             console.log('🔐 SENDING VERIFICATION CODE');
             console.log('═══════════════════════════════════════════════════');
             console.log('📱 Phone number:', phoneNumber);
-            // Generate a 6-digit verification code
-            const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+            // Generate a 4-digit verification code
+            const verificationCode = Math.floor(1000 + Math.random() * 9000).toString();
             console.log('🔢 Generated code:', verificationCode);
             // Store the verification code with timestamp
             verificationCodes.set(phoneNumber, {

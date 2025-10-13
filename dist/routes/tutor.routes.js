@@ -25,6 +25,8 @@ router.post('/confirm-medication', (req, res) => tutorController.confirmMedicati
 router.get('/patients/search', (req, res) => tutorController.searchPatients(req, res));
 // Get a patient's profile
 router.get('/patients/:patientId/profile', (req, res) => tutorController.getPatientProfile(req, res));
+// Get a patient's adherence history
+router.get('/patients/:patientId/adherence-history', (req, res) => tutorController.getPatientAdherenceHistory(req, res));
 // Create a prescription for a patient (tutor acting similar to doctor)
 router.post('/patients/:patientId/prescriptions', (req, res) => {
     // Ensure body has patientId for service; merge from params if missing
@@ -44,4 +46,6 @@ router.delete('/voice-messages/:id', (req, res) => tutorController.deleteVoiceMe
 // Reminder generation endpoints
 router.post('/reminders/generate-today', (req, res) => tutorController.generateTodaysReminders(req, res));
 router.post('/reminders/generate-next-days', (req, res) => tutorController.generateRemindersForNextDays(req, res));
+// Repair utility - link existing reminders to voice messages
+router.post('/reminders/link-voice-messages', (req, res) => tutorController.linkRemindersToVoiceMessages(req, res));
 export default router;
