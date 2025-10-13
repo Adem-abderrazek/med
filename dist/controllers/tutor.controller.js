@@ -1,6 +1,8 @@
 import tutorService from '../services/tutor.service.js';
 import { reminderGeneratorService } from '../services/reminder-generator.service.js';
-import firebaseStorageService from '../services/firebaseStorage.service.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 class TutorController {
     /**
      * Get 3 patients with the nearest medication times for the authenticated tutor
@@ -279,7 +281,7 @@ class TutorController {
         }
     }
     /**
-     * Upload a voice message audio file (base64) to Firebase Storage and return a public URL
+     * Upload a voice message audio file (base64) and return a public URL
      */
     async uploadVoiceMessage(req, res) {
         try {
@@ -291,33 +293,26 @@ class TutorController {
                 return res.status(400).json({ success: false, message: 'fileBase64 is required' });
             }
             console.log('🎤 File details - fileName:', fileName, 'mimeType:', mimeType, 'fileBase64 length:', fileBase64.length);
-            // Check if Firebase Storage is available
-            if (!firebaseStorageService.isAvailable()) {
-                console.error('❌ Firebase Storage not available');
-                return res.status(500).json({
-                    success: false,
-                    message: 'Firebase Storage not configured. Please check environment variables.'
-                });
+            const __filename = fileURLToPath(import.meta.url);
+            const __dirname = path.dirname(__filename);
+            const uploadsRoot = path.resolve(__dirname, '../../uploads/voice-messages');
+            // Create directory if it doesn't exist
+            if (!fs.existsSync(uploadsRoot)) {
+                fs.mkdirSync(uploadsRoot, { recursive: true });
+                console.log('📁 Created uploads directory');
             }
-            // Generate safe filename
             const extension = (mimeType && mimeType.includes('mpeg')) ? 'mp3' : (mimeType && mimeType.includes('wav') ? 'wav' : 'm4a');
             const safeName = (fileName && fileName.replace(/[^a-zA-Z0-9_\-.]/g, '')) || `voice_${Date.now()}.${extension}`;
-            // Upload to Firebase Storage
-            const uploadResult = await firebaseStorageService.uploadVoiceFile(fileBase64, safeName, mimeType || 'audio/m4a');
-            if (!uploadResult.success || !uploadResult.fileUrl) {
-                console.error('❌ Firebase upload failed:', uploadResult.error);
-                return res.status(500).json({
-                    success: false,
-                    message: uploadResult.error || 'Failed to upload to Firebase Storage'
-                });
-            }
-            console.log('✅ Voice file uploaded to Firebase Storage');
-            console.log('🔗 Public URL:', uploadResult.fileUrl);
-            return res.json({
-                success: true,
-                data: { fileUrl: uploadResult.fileUrl },
-                message: 'File uploaded successfully to Firebase Storage'
-            });
+            const filePath = path.join(uploadsRoot, safeName);
+            const buffer = Buffer.from(fileBase64, 'base64');
+            fs.writeFileSync(filePath, buffer);
+            const publicPath = `/uploads/voice-messages/${safeName}`;
+            const baseUrl = `${req.protocol}://${req.get('host')}`;
+            const fileUrl = `${baseUrl}${publicPath}`;
+            console.log('✅ File uploaded successfully');
+            console.log('📁 Local path:', filePath);
+            console.log('🔗 Public URL:', fileUrl);
+            return res.json({ success: true, data: { fileUrl, path: publicPath }, message: 'File uploaded successfully' });
         }
         catch (error) {
             console.error('Error uploading voice message:', error);
