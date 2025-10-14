@@ -1,14 +1,8 @@
 [build]
 builder = "NIXPACKS"
 
-[build.nixpacksPlan]
-phases = ["setup", "install", "build", "start"]
-
-[build.nixpacksPlan.phases.build]
-cmds = ["npm run build"]
-
 [deploy]
-startCommand = "npm start"
+startCommand = "npm run build && npm start"
 healthcheckPath = "/"
 healthcheckTimeout = 100
 restartPolicyType = "ON_FAILURE"
