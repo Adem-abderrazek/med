@@ -824,23 +824,22 @@ class TutorService {
       });
 
       // Create schedules
-      const now = new Date();
       for (const s of schedules) {
-        // Build a Date at today's date with the provided HH:mm
-        // The frontend sends local time, so we need to treat it as local time
+        // The frontend sends local time (e.g., "14:40")
+        // We need to store it in a way that displays the same time on patient's device
         const [hhStr, mmStr] = s.time.split(':');
-        const scheduled = new Date(now);
         const hh = parseInt(hhStr || '8', 10);
         const mm = parseInt(mmStr || '0', 10);
         
-        // Set the time in local timezone (not UTC)
-        // This ensures the time is stored correctly regardless of server timezone
-        scheduled.setHours(hh, mm, 0, 0);
+        // Create a date with today's date at 00:00:00 UTC
+        const scheduled = new Date();
+        scheduled.setUTCFullYear(scheduled.getUTCFullYear(), scheduled.getUTCMonth(), scheduled.getUTCDate());
+        scheduled.setUTCHours(hh, mm, 0, 0);
         
-        console.log(`📅 Creating schedule for ${s.time} (local time) -> ${scheduled.toISOString()} (UTC)`);
-        console.log(`📅 Server timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`);
-        console.log(`📅 Server time: ${new Date().toLocaleString()}`);
-        console.log(`📅 Schedule will be stored as: ${scheduled.toISOString()}`);
+        console.log(`📅 Creating schedule for ${s.time}`);
+        console.log(`   Input: ${s.time}`);
+        console.log(`   Stored as UTC: ${scheduled.toISOString()}`);
+        console.log(`   When parsed by frontend: ${new Date(scheduled.toISOString()).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`);
 
         await prisma.medicationSchedule.create({
           data: {
@@ -984,7 +983,6 @@ class TutorService {
         });
 
         // Create new schedules
-        const now = new Date();
         for (const s of payload.schedules) {
           // Validate that time exists
           if (!s.time) {
@@ -993,12 +991,16 @@ class TutorService {
           }
 
           const [hhStr, mmStr] = s.time.split(':');
-          const scheduled = new Date(now);
+          const scheduled = new Date();
           const hh = parseInt(hhStr || '8', 10);
           const mm = parseInt(mmStr || '0', 10);
-          scheduled.setHours(hh, mm, 0, 0);
           
-          console.log(`📅 Updating schedule for ${s.time} (local time) -> ${scheduled.toISOString()} (UTC)`);
+          // Use UTC methods to avoid timezone conversion
+          scheduled.setUTCFullYear(scheduled.getUTCFullYear(), scheduled.getUTCMonth(), scheduled.getUTCDate());
+          scheduled.setUTCHours(hh, mm, 0, 0);
+          
+          console.log(`📅 Updating schedule for ${s.time}`);
+          console.log(`   Stored as UTC: ${scheduled.toISOString()}`);
 
           await prisma.medicationSchedule.create({
             data: {
