@@ -201,6 +201,136 @@ export class NotificationController {
   }
 
   /**
+   * Sync offline actions (confirm/snooze from queue)
+   */
+  async syncOfflineActions(req: AuthenticatedRequest, res: Response) {
+    try {
+      const { actions } = req.body;
+      const userId = req.user.userId;
+
+      if (!actions || !Array.isArray(actions) || actions.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Actions array is required',
+        });
+      }
+
+      console.log(`🔄 Syncing ${actions.length} offline actions for user ${userId}`);
+
+      const results: Array<{ id: string; type: string; success: boolean; error?: string }> = [];
+
+      for (const action of actions) {
+        try {
+          const { id, type, reminderId } = action;
+
+          if (type === 'confirm') {
+            // Confirm medication
+            const updateResult = await prisma.medicationReminder.updateMany({
+              where: {
+                id: reminderId,
+                patientId: userId,
+                status: { in: ['scheduled', 'sent'] },
+              },
+              data: {
+                status: 'confirmed',
+                confirmedAt: new Date(),
+                confirmedBy: userId,
+              },
+            });
+
+            if (updateResult.count > 0) {
+              // Create confirmation record
+              await prisma.medicationConfirmation.create({
+                data: {
+                  reminderId,
+                  confirmedBy: userId,
+                  confirmationType: 'patient',
+                  confirmedAt: new Date(),
+                },
+              });
+
+              results.push({ id, type, success: true });
+              console.log(`  ✅ Synced confirm action for reminder ${reminderId}`);
+            } else {
+              results.push({ 
+                id, 
+                type, 
+                success: false, 
+                error: 'Reminder not found or already processed' 
+              });
+              console.log(`  ⚠️ Reminder ${reminderId} not found or already confirmed`);
+            }
+          } else if (type === 'snooze') {
+            // Snooze medication
+            const snoozeUntil = new Date(Date.now() + 10 * 60 * 1000);
+            
+            const updateResult = await prisma.medicationReminder.updateMany({
+              where: {
+                id: reminderId,
+                patientId: userId,
+                status: { in: ['scheduled', 'sent'] },
+              },
+              data: {
+                snoozedUntil: snoozeUntil,
+                scheduledFor: snoozeUntil,
+              },
+            });
+
+            if (updateResult.count > 0) {
+              results.push({ id, type, success: true });
+              console.log(`  ✅ Synced snooze action for reminder ${reminderId}`);
+            } else {
+              results.push({ 
+                id, 
+                type, 
+                success: false, 
+                error: 'Reminder not found or already processed' 
+              });
+              console.log(`  ⚠️ Reminder ${reminderId} not found or cannot be snoozed`);
+            }
+          } else {
+            results.push({ 
+              id, 
+              type, 
+              success: false, 
+              error: `Unknown action type: ${type}` 
+            });
+          }
+        } catch (actionError) {
+          console.error(`  ❌ Error processing action ${action.id}:`, actionError);
+          results.push({ 
+            id: action.id, 
+            type: action.type, 
+            success: false, 
+            error: actionError instanceof Error ? actionError.message : 'Unknown error' 
+          });
+        }
+      }
+
+      const successCount = results.filter(r => r.success).length;
+      const failedCount = results.filter(r => !r.success).length;
+
+      console.log(`✅ Sync completed: ${successCount} successful, ${failedCount} failed`);
+
+      res.json({
+        success: failedCount === 0,
+        message: `Synced ${successCount} actions successfully${failedCount > 0 ? `, ${failedCount} failed` : ''}`,
+        data: {
+          results,
+          successCount,
+          failedCount,
+        },
+      });
+    } catch (error: any) {
+      console.error('❌ Error syncing offline actions:', error);
+      res.status(500).json({
+        success: false,
+        message: error?.message || 'Failed to sync offline actions',
+      });
+    }
+  }
+
+  /**
    * Send test notification
    */
   async sendTestNotification(req: AuthenticatedRequest, res: Response) {

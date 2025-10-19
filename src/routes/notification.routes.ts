@@ -14,6 +14,7 @@ router.put('/settings', (req, res) => notificationController.updateNotificationS
 // Medication reminder responses
 router.post('/confirm-medication', (req, res) => notificationController.confirmMedicationTaken(req as any, res));
 router.post('/snooze-reminder', (req, res) => notificationController.snoozeMedicationReminder(req as any, res));
+router.post('/sync-offline-actions', (req, res) => notificationController.syncOfflineActions(req as any, res));
 
 // Testing endpoints
 router.post('/test', (req, res) => notificationController.sendTestNotification(req as any, res));
