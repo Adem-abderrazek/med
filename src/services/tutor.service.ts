@@ -827,11 +827,20 @@ class TutorService {
       const now = new Date();
       for (const s of schedules) {
         // Build a Date at today's date with the provided HH:mm
+        // The frontend sends local time, so we need to treat it as local time
         const [hhStr, mmStr] = s.time.split(':');
         const scheduled = new Date(now);
         const hh = parseInt(hhStr || '8', 10);
         const mm = parseInt(mmStr || '0', 10);
+        
+        // Set the time in local timezone (not UTC)
+        // This ensures the time is stored correctly regardless of server timezone
         scheduled.setHours(hh, mm, 0, 0);
+        
+        console.log(`📅 Creating schedule for ${s.time} (local time) -> ${scheduled.toISOString()} (UTC)`);
+        console.log(`📅 Server timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`);
+        console.log(`📅 Server time: ${new Date().toLocaleString()}`);
+        console.log(`📅 Schedule will be stored as: ${scheduled.toISOString()}`);
 
         await prisma.medicationSchedule.create({
           data: {
@@ -988,6 +997,8 @@ class TutorService {
           const hh = parseInt(hhStr || '8', 10);
           const mm = parseInt(mmStr || '0', 10);
           scheduled.setHours(hh, mm, 0, 0);
+          
+          console.log(`📅 Updating schedule for ${s.time} (local time) -> ${scheduled.toISOString()} (UTC)`);
 
           await prisma.medicationSchedule.create({
             data: {
