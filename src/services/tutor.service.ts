@@ -1082,10 +1082,14 @@ class TutorService {
         throw new Error('Unauthorized: not linked to this patient');
       }
 
-      // Soft delete: set isActive to false
+      // Soft delete: set isActive to false and track deletion
       await prisma.prescription.update({
         where: { id: prescriptionId },
-        data: { isActive: false }
+        data: { 
+          isActive: false,
+          deletedAt: new Date(),
+          deletedBy: tutorId
+        }
       });
 
       // Also deactivate associated schedules
@@ -1093,6 +1097,29 @@ class TutorService {
         where: { prescriptionId },
         data: { isActive: false }
       });
+
+      // Cancel all future medication reminders for this prescription
+      await prisma.medicationReminder.updateMany({
+        where: {
+          prescriptionId: prescriptionId,
+          scheduledFor: { gt: new Date() },
+          status: { in: ['scheduled', 'sent'] }
+        },
+        data: {
+          status: 'cancelled',
+          cancelledAt: new Date(),
+          cancelledBy: tutorId
+        }
+      });
+
+      // Update patient's last modified timestamp for sync detection
+      await prisma.patient.update({
+        where: { id: prescription.patientId },
+        data: { lastModified: new Date() }
+      });
+
+      console.log(`🗑️ Prescription ${prescriptionId} deleted by tutor ${tutorId}`);
+      console.log(`📱 Patient ${prescription.patientId} lastModified updated for sync`);
 
       // Send SMS notification to patient about deleted prescription
       try {
