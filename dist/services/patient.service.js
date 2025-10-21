@@ -617,12 +617,20 @@ export class PatientService {
             console.log('🔍 Fetching medications for patient:', patientId);
             console.log('📅 Date range:', startOfDay, 'to', endOfDay);
             // Get all medication reminders for this date
+            // IMPORTANT: Filter out reminders for deleted/inactive prescriptions
             const reminders = await prisma.medicationReminder.findMany({
                 where: {
                     patientId: patientId,
                     scheduledFor: {
                         gte: startOfDay,
                         lte: endOfDay
+                    },
+                    status: {
+                        not: 'cancelled' // Don't show cancelled reminders
+                    },
+                    prescription: {
+                        isActive: true, // Only show reminders for active prescriptions
+                        deletedAt: null // Don't show deleted prescriptions
                     }
                 },
                 include: {
@@ -689,6 +697,7 @@ export class PatientService {
             console.log('🔍 Fetching upcoming reminders for patient:', patientId);
             console.log('📅 Date range:', now.toISOString(), 'to', futureDate.toISOString());
             // Get all upcoming medication reminders with voice messages
+            // IMPORTANT: Filter out reminders for deleted/inactive prescriptions
             const reminders = await prisma.medicationReminder.findMany({
                 where: {
                     patientId: patientId,
@@ -698,6 +707,10 @@ export class PatientService {
                     },
                     status: {
                         in: ['scheduled', 'sent']
+                    },
+                    prescription: {
+                        isActive: true, // Only get reminders for active prescriptions
+                        deletedAt: null // Don't include deleted prescriptions
                     }
                 },
                 include: {
