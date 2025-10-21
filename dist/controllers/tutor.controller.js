@@ -236,7 +236,7 @@ class TutorController {
         try {
             const tutorId = req.user.userId;
             const { prescriptionId } = req.params;
-            const { medicationName, medicationGenericName, medicationDosage, medicationForm, medicationDescription, medicationImageUrl, customDosage, instructions, schedules, isChronic, endDate, scheduleType, intervalHours } = req.body;
+            const { medicationName, medicationGenericName, medicationDosage, medicationForm, medicationDescription, medicationImageUrl, customDosage, instructions, schedules, voiceMessageId, isChronic, endDate, scheduleType, intervalHours } = req.body;
             if (!prescriptionId) {
                 return res.status(400).json({ success: false, message: 'prescriptionId is required' });
             }
@@ -250,6 +250,7 @@ class TutorController {
                 customDosage,
                 instructions,
                 schedules,
+                voiceMessageId,
                 isChronic,
                 endDate,
                 scheduleType,
