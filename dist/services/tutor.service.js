@@ -722,6 +722,7 @@ class TutorService {
                 const [hhStr, mmStr] = s.time.split(':');
                 const hh = parseInt(hhStr || '8', 10);
                 const mm = parseInt(mmStr || '0', 10);
+                // CRITICAL FIX: Use setHours() to preserve local timezone
                 // Create a date with today's date and the specified time in LOCAL timezone
                 // This ensures 15:55 input = 15:55 notification time (not UTC)
                 const scheduled = new Date();
@@ -855,6 +856,7 @@ class TutorService {
                     const scheduled = new Date();
                     const hh = parseInt(hhStr || '8', 10);
                     const mm = parseInt(mmStr || '0', 10);
+                    // CRITICAL FIX: Use setHours() to preserve local timezone
                     // Use LOCAL time methods to preserve the entered time
                     // This ensures 15:55 input = 15:55 notification time (not UTC)
                     scheduled.setHours(hh, mm, 0, 0);
