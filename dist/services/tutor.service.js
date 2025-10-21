@@ -722,14 +722,14 @@ class TutorService {
                 const [hhStr, mmStr] = s.time.split(':');
                 const hh = parseInt(hhStr || '8', 10);
                 const mm = parseInt(mmStr || '0', 10);
-                // Create a date with today's date at 00:00:00 UTC
+                // Create a date with today's date and the specified time in LOCAL timezone
+                // This ensures 15:55 input = 15:55 notification time (not UTC)
                 const scheduled = new Date();
-                scheduled.setUTCFullYear(scheduled.getUTCFullYear(), scheduled.getUTCMonth(), scheduled.getUTCDate());
-                scheduled.setUTCHours(hh, mm, 0, 0);
+                scheduled.setHours(hh, mm, 0, 0);
                 console.log(`📅 Creating schedule for ${s.time}`);
-                console.log(`   Input: ${s.time}`);
-                console.log(`   Stored as UTC: ${scheduled.toISOString()}`);
-                console.log(`   When parsed by frontend: ${new Date(scheduled.toISOString()).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`);
+                console.log(`   Input time: ${s.time}`);
+                console.log(`   Scheduled time (local): ${scheduled.toLocaleString()}`);
+                console.log(`   Stored as (ISO): ${scheduled.toISOString()}`);
                 await prisma.medicationSchedule.create({
                     data: {
                         prescriptionId: prescription.id,
@@ -855,11 +855,13 @@ class TutorService {
                     const scheduled = new Date();
                     const hh = parseInt(hhStr || '8', 10);
                     const mm = parseInt(mmStr || '0', 10);
-                    // Use UTC methods to avoid timezone conversion
-                    scheduled.setUTCFullYear(scheduled.getUTCFullYear(), scheduled.getUTCMonth(), scheduled.getUTCDate());
-                    scheduled.setUTCHours(hh, mm, 0, 0);
+                    // Use LOCAL time methods to preserve the entered time
+                    // This ensures 15:55 input = 15:55 notification time (not UTC)
+                    scheduled.setHours(hh, mm, 0, 0);
                     console.log(`📅 Updating schedule for ${s.time}`);
-                    console.log(`   Stored as UTC: ${scheduled.toISOString()}`);
+                    console.log(`   Input time: ${s.time}`);
+                    console.log(`   Scheduled time (local): ${scheduled.toLocaleString()}`);
+                    console.log(`   Stored as (ISO): ${scheduled.toISOString()}`);
                     await prisma.medicationSchedule.create({
                         data: {
                             prescriptionId,
