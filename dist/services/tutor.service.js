@@ -722,15 +722,15 @@ class TutorService {
                 const [hhStr, mmStr] = s.time.split(':');
                 const hh = parseInt(hhStr || '8', 10);
                 const mm = parseInt(mmStr || '0', 10);
-                // CRITICAL FIX: Use setHours() to preserve local timezone
-                // Create a date with today's date and the specified time in LOCAL timezone
-                // This ensures 15:55 input = 15:55 notification time (not UTC)
+                // REAL FIX: Create date in Tunisia timezone (UTC+1)
+                // Frontend sends local time (e.g., "17:10" means 5:10 PM Tunisia time)
+                // We need to store it so it displays as 17:10 in Tunisia, not UTC
                 const scheduled = new Date();
-                scheduled.setHours(hh, mm, 0, 0);
+                scheduled.setUTCHours(hh - 1, mm, 0, 0); // Subtract 1 hour to compensate for UTC+1
                 console.log(`📅 Creating schedule for ${s.time}`);
-                console.log(`   Input time: ${s.time}`);
-                console.log(`   Scheduled time (local): ${scheduled.toLocaleString()}`);
-                console.log(`   Stored as (ISO): ${scheduled.toISOString()}`);
+                console.log(`   Input time (Tunisia): ${s.time}`);
+                console.log(`   Stored as (UTC): ${scheduled.toISOString()}`);
+                console.log(`   Will display in Tunisia as: ${hh}:${mm.toString().padStart(2, '0')}`);
                 await prisma.medicationSchedule.create({
                     data: {
                         prescriptionId: prescription.id,
@@ -856,14 +856,14 @@ class TutorService {
                     const scheduled = new Date();
                     const hh = parseInt(hhStr || '8', 10);
                     const mm = parseInt(mmStr || '0', 10);
-                    // CRITICAL FIX: Use setHours() to preserve local timezone
-                    // Use LOCAL time methods to preserve the entered time
-                    // This ensures 15:55 input = 15:55 notification time (not UTC)
-                    scheduled.setHours(hh, mm, 0, 0);
+                    // REAL FIX: Create date in Tunisia timezone (UTC+1)
+                    // Frontend sends local time (e.g., "17:10" means 5:10 PM Tunisia time)
+                    // We need to store it so it displays as 17:10 in Tunisia, not UTC
+                    scheduled.setUTCHours(hh - 1, mm, 0, 0); // Subtract 1 hour to compensate for UTC+1
                     console.log(`📅 Updating schedule for ${s.time}`);
-                    console.log(`   Input time: ${s.time}`);
-                    console.log(`   Scheduled time (local): ${scheduled.toLocaleString()}`);
-                    console.log(`   Stored as (ISO): ${scheduled.toISOString()}`);
+                    console.log(`   Input time (Tunisia): ${s.time}`);
+                    console.log(`   Stored as (UTC): ${scheduled.toISOString()}`);
+                    console.log(`   Will display in Tunisia as: ${hh}:${mm.toString().padStart(2, '0')}`);
                     await prisma.medicationSchedule.create({
                         data: {
                             prescriptionId,
