@@ -1106,16 +1106,14 @@ class TutorService {
           status: { in: ['scheduled', 'sent'] }
         },
         data: {
-          status: 'cancelled',
-          cancelledAt: new Date(),
-          cancelledBy: tutorId
+          status: 'cancelled'
         }
       });
 
       // Update patient's last modified timestamp for sync detection
-      await prisma.patient.update({
+      await prisma.user.update({
         where: { id: prescription.patientId },
-        data: { lastModified: new Date() }
+        data: { updatedAt: new Date() }
       });
 
       console.log(`🗑️ Prescription ${prescriptionId} deleted by tutor ${tutorId}`);

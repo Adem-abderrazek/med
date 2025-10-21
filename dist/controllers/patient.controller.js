@@ -260,14 +260,23 @@ class PatientController {
         try {
             const patientId = req.user.userId;
             const daysAhead = parseInt(req.query.days) || 30;
+            const lastSyncTime = req.query.lastSync
+                ? new Date(req.query.lastSync)
+                : undefined;
             console.log('📱 Getting upcoming reminders for offline sync');
             console.log('Patient ID:', patientId);
             console.log('Days ahead:', daysAhead);
+            console.log('Last sync time:', lastSyncTime?.toISOString() || 'Never');
             const reminders = await patientService.getUpcomingReminders(patientId, daysAhead);
+            // Get deleted prescriptions since last sync
+            const deletedPrescriptions = lastSyncTime
+                ? await patientService.getDeletedPrescriptions(patientId, lastSyncTime)
+                : [];
             res.json({
                 success: true,
                 data: reminders,
-                message: `Found ${reminders.length} upcoming reminders`
+                deletedPrescriptions: deletedPrescriptions,
+                message: `Found ${reminders.length} upcoming reminders, ${deletedPrescriptions.length} deleted prescriptions`
             });
         }
         catch (error) {

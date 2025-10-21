@@ -716,14 +716,20 @@ class TutorService {
                 }
             });
             // Create schedules
-            const now = new Date();
             for (const s of schedules) {
-                // Build a Date at today's date with the provided HH:mm
+                // The frontend sends local time (e.g., "14:40")
+                // We need to store it in a way that displays the same time on patient's device
                 const [hhStr, mmStr] = s.time.split(':');
-                const scheduled = new Date(now);
                 const hh = parseInt(hhStr || '8', 10);
                 const mm = parseInt(mmStr || '0', 10);
-                scheduled.setHours(hh, mm, 0, 0);
+                // Create a date with today's date at 00:00:00 UTC
+                const scheduled = new Date();
+                scheduled.setUTCFullYear(scheduled.getUTCFullYear(), scheduled.getUTCMonth(), scheduled.getUTCDate());
+                scheduled.setUTCHours(hh, mm, 0, 0);
+                console.log(`📅 Creating schedule for ${s.time}`);
+                console.log(`   Input: ${s.time}`);
+                console.log(`   Stored as UTC: ${scheduled.toISOString()}`);
+                console.log(`   When parsed by frontend: ${new Date(scheduled.toISOString()).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`);
                 await prisma.medicationSchedule.create({
                     data: {
                         prescriptionId: prescription.id,
@@ -839,7 +845,6 @@ class TutorService {
                     where: { prescriptionId }
                 });
                 // Create new schedules
-                const now = new Date();
                 for (const s of payload.schedules) {
                     // Validate that time exists
                     if (!s.time) {
@@ -847,10 +852,14 @@ class TutorService {
                         continue;
                     }
                     const [hhStr, mmStr] = s.time.split(':');
-                    const scheduled = new Date(now);
+                    const scheduled = new Date();
                     const hh = parseInt(hhStr || '8', 10);
                     const mm = parseInt(mmStr || '0', 10);
-                    scheduled.setHours(hh, mm, 0, 0);
+                    // Use UTC methods to avoid timezone conversion
+                    scheduled.setUTCFullYear(scheduled.getUTCFullYear(), scheduled.getUTCMonth(), scheduled.getUTCDate());
+                    scheduled.setUTCHours(hh, mm, 0, 0);
+                    console.log(`📅 Updating schedule for ${s.time}`);
+                    console.log(`   Stored as UTC: ${scheduled.toISOString()}`);
                     await prisma.medicationSchedule.create({
                         data: {
                             prescriptionId,
@@ -924,16 +933,38 @@ class TutorService {
             if (!relation) {
                 throw new Error('Unauthorized: not linked to this patient');
             }
-            // Soft delete: set isActive to false
+            // Soft delete: set isActive to false and track deletion
             await prisma.prescription.update({
                 where: { id: prescriptionId },
-                data: { isActive: false }
+                data: {
+                    isActive: false,
+                    deletedAt: new Date(),
+                    deletedBy: tutorId
+                }
             });
             // Also deactivate associated schedules
             await prisma.medicationSchedule.updateMany({
                 where: { prescriptionId },
                 data: { isActive: false }
             });
+            // Cancel all future medication reminders for this prescription
+            await prisma.medicationReminder.updateMany({
+                where: {
+                    prescriptionId: prescriptionId,
+                    scheduledFor: { gt: new Date() },
+                    status: { in: ['scheduled', 'sent'] }
+                },
+                data: {
+                    status: 'cancelled'
+                }
+            });
+            // Update patient's last modified timestamp for sync detection
+            await prisma.user.update({
+                where: { id: prescription.patientId },
+                data: { updatedAt: new Date() }
+            });
+            console.log(`🗑️ Prescription ${prescriptionId} deleted by tutor ${tutorId}`);
+            console.log(`📱 Patient ${prescription.patientId} lastModified updated for sync`);
             // Send SMS notification to patient about deleted prescription
             try {
                 const patient = await prisma.user.findUnique({

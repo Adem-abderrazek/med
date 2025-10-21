@@ -34,6 +34,7 @@ enum ReminderStatus {
   confirmed
   missed
   manual_confirm
+  cancelled
 }
 
 enum ConfirmationType {
@@ -163,6 +164,8 @@ model Prescription {
   endDate       DateTime?
   isChronic     Boolean     @default(false)
   isActive      Boolean     @default(true)
+  deletedAt     DateTime?
+  deletedBy     String?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 

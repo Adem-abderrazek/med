@@ -1207,6 +1207,39 @@ export class PatientService {
       throw new Error('Failed to get patient adherence history');
     }
   }
+
+  /**
+   * Get deleted prescriptions since last sync
+   */
+  async getDeletedPrescriptions(patientId: string, lastSyncTime: Date): Promise<string[]> {
+    try {
+      console.log('🔍 Checking for deleted prescriptions since:', lastSyncTime.toISOString());
+      
+      // Find prescriptions that were deleted after last sync
+      // We need to check the prescription history or use a soft delete approach
+      const deletedPrescriptions = await prisma.prescription.findMany({
+        where: {
+          patientId: patientId,
+          deletedAt: {
+            not: null,
+            gte: lastSyncTime
+          }
+        },
+        select: {
+          id: true
+        }
+      });
+
+      const deletedIds = deletedPrescriptions.map(p => p.id);
+      console.log(`🗑️ Found ${deletedIds.length} deleted prescriptions:`, deletedIds);
+      
+      return deletedIds;
+    } catch (error) {
+      console.error('Error getting deleted prescriptions:', error);
+      // Return empty array if there's an error - don't fail the sync
+      return [];
+    }
+  }
 }
 
 export const patientService = new PatientService();

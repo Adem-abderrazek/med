@@ -45,6 +45,11 @@ export class ReminderGeneratorService {
                 const scheduledTime = new Date(targetDate);
                 const scheduleTime = new Date(schedule.scheduledTime);
                 scheduledTime.setHours(scheduleTime.getHours(), scheduleTime.getMinutes(), scheduleTime.getSeconds(), 0);
+                console.log(`🔄 Generating reminder for ${schedule.prescription.medication.name}`);
+                console.log(`   Schedule time from DB: ${schedule.scheduledTime}`);
+                console.log(`   Target date: ${targetDate.toISOString()}`);
+                console.log(`   Generated reminder time: ${scheduledTime.toISOString()}`);
+                console.log(`   Local display: ${scheduledTime.toLocaleString()}`);
                 // Check if a reminder already exists for this prescription and time
                 const existingReminder = await prisma.medicationReminder.findFirst({
                     where: {
