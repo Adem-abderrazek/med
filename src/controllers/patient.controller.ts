@@ -394,9 +394,8 @@ class PatientController {
       await prisma.medicationReminder.update({
         where: { id: reminderId },
         data: {
-          status: 'snoozed',
-          snoozedUntil: snoozedUntil,
-          snoozeCount: { increment: 1 }
+          status: 'scheduled',
+          snoozedUntil: snoozedUntil
         }
       });
 

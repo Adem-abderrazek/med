@@ -317,7 +317,7 @@ export class PatientService {
       }
 
       // Check if medication was already taken
-      if (reminder.status === 'manual_confirm' || reminder.status === 'taken') {
+      if (reminder.status === 'manual_confirm' || reminder.status === 'confirmed') {
         throw new Error('Ce médicament a déjà été marqué comme pris.');
       }
 

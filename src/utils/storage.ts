@@ -1,50 +1,34 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import path from 'path';
+import fs from 'fs';
 
-const s3Client = new S3Client({
-  region: process.env.AWS_REGION || 'us-east-1',
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || ''
-  }
-});
+// Local file storage for voice messages (no AWS dependency)
+const uploadsDir = process.env.UPLOADS_DIR || './uploads/voice-messages';
 
-const bucketName = process.env.AWS_BUCKET_NAME || '';
+// Ensure uploads directory exists
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
 
 export async function uploadFile(file: Buffer, fileName: string): Promise<string> {
-  const key = `voice-messages/${Date.now()}-${fileName}`;
-  
-  await s3Client.send(new PutObjectCommand({
-    Bucket: bucketName,
-    Key: key,
-    Body: file,
-    ContentType: 'audio/mpeg'
-  }));
+  const key = `${Date.now()}-${fileName}`;
+  const filePath = path.join(uploadsDir, key);
 
-  // Generate a signed URL that expires in 24 hours
-  const signedUrl = await getSignedUrl(s3Client, 
-    new PutObjectCommand({ Bucket: bucketName, Key: key }),
-    { expiresIn: 86400 }
-  );
+  fs.writeFileSync(filePath, file);
 
-  return signedUrl;
+  // Return relative URL path
+  return `/uploads/voice-messages/${key}`;
 }
 
 export async function deleteFile(fileUrl: string): Promise<void> {
   const key = path.basename(fileUrl);
-  
-  await s3Client.send(new DeleteObjectCommand({
-    Bucket: bucketName,
-    Key: `voice-messages/${key}`
-  }));
+  const filePath = path.join(uploadsDir, key);
+
+  if (fs.existsSync(filePath)) {
+    fs.unlinkSync(filePath);
+  }
 }
 
 export async function getSignedFileUrl(key: string): Promise<string> {
-  const command = new PutObjectCommand({
-    Bucket: bucketName,
-    Key: `voice-messages/${key}`
-  });
-
-  return getSignedUrl(s3Client, command, { expiresIn: 86400 });
+  // For local storage, just return the relative URL
+  return `/uploads/voice-messages/${key}`;
 }
