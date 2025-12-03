@@ -411,10 +411,12 @@ class DoctorService {
         // Transform schedules to match frontend expectations
         const schedules = prescription.schedules.map(schedule => {
           // Extract HH:mm from scheduledTime
+          // IMPORTANT: Use Tunisia timezone (UTC+1) for consistent display
           const time = new Date(schedule.scheduledTime).toLocaleTimeString('en-US', {
             hour: '2-digit',
             minute: '2-digit',
-            hour12: false
+            hour12: false,
+            timeZone: 'Africa/Tunis'
           });
 
           return {

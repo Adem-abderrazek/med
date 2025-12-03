@@ -38,7 +38,9 @@ export class ReminderGeneratorService {
       console.log(`📋 Found ${schedules.length} active schedules to process`);
 
       // Get the day of week for target date (1=Monday, 7=Sunday)
-      const dayOfWeek = targetDate.getDay() === 0 ? 7 : targetDate.getDay();
+      // Use UTC to be consistent with how dates are stored
+      const utcDay = targetDate.getUTCDay();
+      const dayOfWeek = utcDay === 0 ? 7 : utcDay;
 
       let remindersCreated = 0;
 
@@ -49,20 +51,22 @@ export class ReminderGeneratorService {
         }
 
         // Create the scheduled time for the target date
+        // IMPORTANT: Use UTC hours to maintain consistency with how schedules are stored
+        // Schedules are stored as UTC = Tunisia_time - 1 (e.g., 15:00 Tunisia = 14:00 UTC)
         const scheduledTime = new Date(targetDate);
         const scheduleTime = new Date(schedule.scheduledTime);
-        scheduledTime.setHours(
-          scheduleTime.getHours(),
-          scheduleTime.getMinutes(),
-          scheduleTime.getSeconds(),
+        scheduledTime.setUTCHours(
+          scheduleTime.getUTCHours(),
+          scheduleTime.getUTCMinutes(),
+          scheduleTime.getUTCSeconds(),
           0
         );
-        
+
         console.log(`🔄 Generating reminder for ${schedule.prescription.medication.name}`);
         console.log(`   Schedule time from DB: ${schedule.scheduledTime}`);
         console.log(`   Target date: ${targetDate.toISOString()}`);
         console.log(`   Generated reminder time: ${scheduledTime.toISOString()}`);
-        console.log(`   Local display: ${scheduledTime.toLocaleString()}`);
+        console.log(`   Tunisia display: ${scheduledTime.toLocaleString('fr-FR', { timeZone: 'Africa/Tunis' })}`);
 
         // Check if a reminder already exists for this prescription and time
         const existingReminder = await prisma.medicationReminder.findFirst({
@@ -74,7 +78,7 @@ export class ReminderGeneratorService {
         });
 
         if (existingReminder) {
-          console.log(`⏭️  Reminder already exists for ${schedule.prescription.medication.name} at ${scheduledTime.toLocaleString()}`);
+          console.log(`⏭️  Reminder already exists for ${schedule.prescription.medication.name} at ${scheduledTime.toLocaleString('fr-FR', { timeZone: 'Africa/Tunis' })}`);
           continue;
         }
 
@@ -128,11 +132,11 @@ export class ReminderGeneratorService {
           }
         });
 
-        console.log(`✅ Created reminder for ${schedule.prescription.patient.firstName} - ${schedule.prescription.medication.name} at ${scheduledTime.toLocaleString()}${voiceMessageId ? ' (with voice message)' : ''}`);
+        console.log(`✅ Created reminder for ${schedule.prescription.patient.firstName} - ${schedule.prescription.medication.name} at ${scheduledTime.toLocaleString('fr-FR', { timeZone: 'Africa/Tunis' })}${voiceMessageId ? ' (with voice message)' : ''}`);
         remindersCreated++;
       }
 
-      console.log(`🎉 Generated ${remindersCreated} new reminders for ${targetDate.toDateString()}`);
+      console.log(`🎉 Generated ${remindersCreated} new reminders for ${targetDate.toLocaleDateString('fr-FR', { timeZone: 'Africa/Tunis' })}`);
 
     } catch (error) {
       console.error('❌ Error generating reminders:', error);
@@ -145,7 +149,7 @@ export class ReminderGeneratorService {
    */
   async generateTodaysReminders(): Promise<void> {
     const today = new Date();
-    today.setHours(0, 0, 0, 0); // Start of day
+    today.setUTCHours(0, 0, 0, 0); // Start of day in UTC
     await this.generateRemindersForDate(today);
   }
 
@@ -154,12 +158,12 @@ export class ReminderGeneratorService {
    */
   async generateRemindersForNextDays(days: number = 7): Promise<void> {
     console.log(`📅 Generating reminders for the next ${days} days`);
-    
+
     for (let i = 0; i < days; i++) {
       const targetDate = new Date();
-      targetDate.setDate(targetDate.getDate() + i);
-      targetDate.setHours(0, 0, 0, 0);
-      
+      targetDate.setUTCDate(targetDate.getUTCDate() + i);
+      targetDate.setUTCHours(0, 0, 0, 0);
+
       await this.generateRemindersForDate(targetDate);
     }
   }

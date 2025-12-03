@@ -661,10 +661,12 @@ class TutorService {
       const formattedPrescriptions = prescriptions.map(prescription => {
         const schedules = prescription.schedules.map(schedule => {
           // Extract HH:mm from scheduledTime
+          // IMPORTANT: Use Tunisia timezone (UTC+1) for consistent display
           const time = new Date(schedule.scheduledTime).toLocaleTimeString('en-US', {
             hour: '2-digit',
             minute: '2-digit',
-            hour12: false
+            hour12: false,
+            timeZone: 'Africa/Tunis'
           });
 
           return {
@@ -1232,7 +1234,8 @@ class TutorService {
             name: reminder.prescription.medication.name,
             nextDue: scheduledTime.toLocaleTimeString('fr-FR', {
               hour: '2-digit',
-              minute: '2-digit'
+              minute: '2-digit',
+              timeZone: 'Africa/Tunis'
             }),
             status: reminder.status === 'confirmed' || reminder.status === 'manual_confirm' ? 'taken' :
                    reminder.status === 'missed' ? 'missed' : 'pending'
