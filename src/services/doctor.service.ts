@@ -139,14 +139,18 @@ class DoctorService {
   }
 
   // Get all patients for the doctor/tutor
+  // IMPORTANT: Only returns patients with active relationships - no auto-creation
   async getAllPatients(doctorId: string): Promise<PatientSearchResult[]> {
     try {
-      // First, get all patients assigned to this doctor/tutor through relationships
+      // Get all patients assigned to this doctor/tutor through ACTIVE relationships only
       const doctorPatientRelationships = await prisma.userRelationship.findMany({
         where: {
           caregiverId: doctorId,
           relationshipType: { in: ['medecin', 'tuteur'] }, // Support both types
-          isActive: true
+          isActive: true, // CRITICAL: Only show patients with active relationships
+          patient: {
+            isActive: true // Also ensure patient is active
+          }
         },
         include: {
           patient: {
@@ -165,61 +169,15 @@ class DoctorService {
               }
             }
           }
+        },
+        orderBy: {
+          patient: {
+            lastName: 'asc'
+          }
         }
       });
 
-      // If no relationships exist, create initial relationships for all patients
-      if (doctorPatientRelationships.length === 0) {
-        const allPatients = await prisma.user.findMany({
-          where: {
-            userType: 'patient'
-          },
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            phoneNumber: true,
-            createdAt: true,
-            lastLogin: true,
-            reminders: {
-              select: {
-                id: true
-              }
-            }
-          },
-          orderBy: {
-            lastName: 'asc'
-          }
-        });
-
-        // Create relationships for all patients (active by default)
-        const relationships = allPatients.map(patient => ({
-          caregiverId: doctorId,
-          patientId: patient.id,
-          relationshipType: 'medecin' as const,
-          isActive: true
-        }));
-
-        if (relationships.length > 0) {
-          await prisma.userRelationship.createMany({
-            data: relationships,
-            skipDuplicates: true
-          });
-        }
-
-        return allPatients.map(patient => ({
-          id: patient.id,
-          firstName: patient.firstName,
-          lastName: patient.lastName,
-          email: patient.email,
-          phoneNumber: patient.phoneNumber,
-          lastVisit: patient.lastLogin || patient.createdAt,
-          medicationCount: patient.reminders.length
-        }));
-      }
-
-      // Return only patients assigned to this doctor
+      // Return only patients with active relationships - no fallback to all patients
       return doctorPatientRelationships.map(relationship => ({
         id: relationship.patient.id,
         firstName: relationship.patient.firstName,
