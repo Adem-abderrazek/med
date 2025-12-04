@@ -1227,16 +1227,13 @@ class TutorService {
         });
 
         // Transform reminders to medications format
+        // IMPORTANT: Send scheduledFor as ISO string (UTC) so frontend can consistently format it
+        // This matches the patient dashboard API behavior for consistency
         const medications = todaysReminders.map(reminder => {
-          const scheduledTime = new Date(reminder.scheduledFor);
           return {
             id: reminder.id,
             name: reminder.prescription.medication.name,
-            nextDue: scheduledTime.toLocaleTimeString('fr-FR', {
-              hour: '2-digit',
-              minute: '2-digit',
-              timeZone: 'Africa/Tunis'
-            }),
+            nextDue: reminder.scheduledFor.toISOString(), // Send UTC ISO string, let frontend format with timezone
             status: reminder.status === 'confirmed' || reminder.status === 'manual_confirm' ? 'taken' :
                    reminder.status === 'missed' ? 'missed' : 'pending'
           };
