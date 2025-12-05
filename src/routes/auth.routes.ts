@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { body } from 'express-validator';
 import authController from '../controllers/auth.controller.js';
+import { validatePhoneNumber, isE164Format } from '../utils/phoneValidator.js';
 
 const router = Router();
 
@@ -47,8 +48,31 @@ const registerValidation = [
     .matches(/^[a-zA-Z\s]+$/)
     .withMessage('Last name can only contain letters and spaces'),
   body('phoneNumber')
-    .matches(/^\+?[1-9]\d{1,14}$/)
-    .withMessage('Please provide a valid phone number'),
+    .notEmpty()
+    .withMessage('Phone number is required')
+    .custom((value) => {
+      // Validate using libphonenumber-js
+      const validation = validatePhoneNumber(value);
+      
+      if (!validation.isValidForCountry || !validation.isPossible) {
+        throw new Error(
+          validation.error || 
+          'Please provide a valid phone number in E.164 format (e.g., +21612345678)'
+        );
+      }
+
+      // Ensure it's in E.164 format
+      if (!isE164Format(validation.e164)) {
+        throw new Error('Phone number must be in E.164 format (e.g., +21612345678)');
+      }
+
+      return true;
+    })
+    .customSanitizer((value) => {
+      // Normalize to E.164 format
+      const validation = validatePhoneNumber(value);
+      return validation.e164 || value;
+    }),
   body('userType')
     .isIn(['tuteur', 'medecin', 'patient'])
     .withMessage('User type must be one of: tuteur, medecin, patient')

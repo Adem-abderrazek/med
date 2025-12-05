@@ -113,21 +113,44 @@ class TutorController {
         });
       }
 
-      const result = await tutorService.sendPatientInvitation(tutorId, {
-        firstName: finalFirstName,
-        lastName: finalLastName,
-        phoneNumber,
-        audioMessage,
-        audioDuration
-      });
-      
-      console.log('📱 Patient invitation result:', result);
-      
-      res.json({
-        success: true,
-        data: result,
-        message: 'Patient invitation sent successfully'
-      });
+      // Validate phone number format using libphonenumber-js
+      try {
+        const { validatePhoneNumber } = await import('../utils/phoneValidator.js');
+        const phoneValidation = validatePhoneNumber(phoneNumber);
+        
+        if (!phoneValidation.isValidForCountry || !phoneValidation.isPossible) {
+          return res.status(400).json({
+            success: false,
+            message: phoneValidation.error || 'Invalid phone number format. Please use E.164 format (e.g., +21612345678)'
+          });
+        }
+
+        // Use normalized E.164 format
+        const normalizedPhone = phoneValidation.e164;
+        
+        // Continue with normalized phone
+        const result = await tutorService.sendPatientInvitation(tutorId, {
+          firstName: finalFirstName,
+          lastName: finalLastName,
+          phoneNumber: normalizedPhone,
+          audioMessage,
+          audioDuration
+        });
+        
+        console.log('📱 Patient invitation result:', result);
+        
+        res.json({
+          success: true,
+          data: result,
+          message: 'Patient invitation sent successfully'
+        });
+      } catch (validationError: any) {
+        return res.status(400).json({
+          success: false,
+          message: validationError.message || 'Invalid phone number format'
+        });
+      }
+
     } catch (error) {
       console.error('❌ Error in sendPatientInvitation controller:', error);
       res.status(500).json({
