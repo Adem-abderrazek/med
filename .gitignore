@@ -1,0 +1,64 @@
+# Dependencies
+node_modules
+node_modules/
+UsersademaAppDataRoamingnpm/
+
+# Environment variables
+.env
+.env.local
+.env.production
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Testing
+coverage/
+*.test.ts.snap
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+*.swp
+*.swo
+*~
+bash.exe.stackdump
+
+# Database
+*.sql
+backup.sql
+*.db
+*.sqlite
+
+# Uploads (production will use cloud storage)
+uploads/
+uploads/**/*.m4a
+uploads/**/*.mp3
+uploads/**/*.wav
+
+# Firebase & Secrets
+*.json.key
+*-firebase-adminsdk-*.json
+firebase-adminsdk-*.json
+medic-2eb2e-firebase-adminsdk.json
+medicare-244b3-firebase-adminsdk-fbsvc-21e2b2edf9.json
+
+# Development scripts
+check-*.js
+fix-*.js
+test-*.js
+scripts/
+
+# Documentation (for production)
+*.md
+!README.md
+
+# Prisma
+/src/generated/prisma
